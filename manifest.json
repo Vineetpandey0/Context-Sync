@@ -10,10 +10,6 @@
     "scripting"
   ],
 
-  "optional_permissions": [
-    "unlimitedStorage"
-  ],
-
   "host_permissions": [
     "https://claude.ai/*"
   ],
