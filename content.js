@@ -1,11 +1,106 @@
 // content.js — DOM Scraper for Claude.ai
-// Watches the page for conversation updates and saves them via background.js
-
-// ─── Inline the lib modules here (web-accessible-resources can't be require()'d
-//     directly in Manifest V3 content scripts unless injected, so we inline them)
+// Watches the page for conversation updates, compresses, and saves them via chrome.storage.
 
 
-// ── Capsule ──────────────────────────────────────────────────────────────────
+// compressor.js — Gemini 2.5 Flash message compressor
+// Pure logic only — NO API key, NO fetch calls.
+// All Gemini calls are delegated to background.js via chrome.runtime.sendMessage,
+// so the API key never touches this file.
+
+// ── Code-block extraction ─────────────────────────────────────────────────────
+// Extracts fenced code blocks before compression so they're never touched.
+// Returns { stripped: string, blocks: Array<{placeholder, code}> }
+function extractCodeBlocks(text) {
+  const blocks = [];
+  let idx = 0;
+  const stripped = text.replace(/```[\s\S]*?```/g, (match) => {
+    const placeholder = `__CODE_BLOCK_${idx++}__`;
+    blocks.push({ placeholder, code: match });
+    return placeholder;
+  });
+  return { stripped, blocks };
+}
+
+function restoreCodeBlocks(text, blocks) {
+  let result = text;
+  for (const { placeholder, code } of blocks) {
+    result = result.replace(placeholder, code);
+  }
+  return result;
+}
+
+// ── Single-message compressor ─────────────────────────────────────────────────
+/**
+ * Compress a single message by asking background.js to call Gemini.
+ * Code blocks are extracted here, sent as placeholders, restored after.
+ *
+ * @param {{ type: "user"|"assistant", content: string, format: string, timestamp: string }} message
+ * @returns {Promise<{ ...message, compressed: boolean }>}
+ */
+async function compressMessage(message) {
+  const { content, type } = message;
+
+  // Skip very short messages — not worth a round-trip
+  if (!content || content.length < 120) {
+    return { ...message, compressed: false };
+  }
+
+  const { stripped, blocks } = extractCodeBlocks(content);
+
+  // If there's no prose left after extracting code blocks, skip
+  const proseOnly = stripped.replace(/__CODE_BLOCK_\d+__/g, "").trim();
+  if (!proseOnly) return { ...message, compressed: false };
+
+  // Ask background.js to call Gemini (key lives only there)
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { action: "compressMessage", type, content: stripped },
+      (response) => {
+        if (chrome.runtime.lastError || !response?.ok || !response?.compressed) {
+          console.warn("[ContextClaw] compressMessage failed:", chrome.runtime.lastError?.message);
+          resolve({ ...message, compressed: false });
+          return;
+        }
+        const compressedContent = restoreCodeBlocks(response.compressed, blocks);
+        resolve({ ...message, content: compressedContent, compressed: true });
+      }
+    );
+  });
+}
+
+// ── Conversation-level compressor ─────────────────────────────────────────────
+/**
+ * Compress a full conversation's messages.
+ * Rules:
+ *   1. Keep only the last 5 user + last 5 assistant messages (interleaved order preserved).
+ *   2. Compress each kept message (code blocks untouched).
+ *
+ * @param {Array<{ type: string, content: string, format: string, timestamp: string }>} messages
+ * @returns {Promise<Array<{ type: string, content: string, format: string, timestamp: string, compressed: boolean }>>}
+ */
+async function compressConversation(messages) {
+  // Keep last 5 of each type while preserving interleaved DOM order
+  const userMessages    = messages.filter((m) => m.type === "user").slice(-5);
+  const assistantMessages = messages.filter((m) => m.type === "assistant").slice(-5);
+
+  const keptUserSet      = new Set(userMessages.map((m) => m.timestamp + m.content.slice(0, 40)));
+  const keptAssistantSet = new Set(assistantMessages.map((m) => m.timestamp + m.content.slice(0, 40)));
+
+  const kept = messages.filter((m) => {
+    const key = m.timestamp + m.content.slice(0, 40);
+    return m.type === "user" ? keptUserSet.has(key) : keptAssistantSet.has(key);
+  });
+
+  // Compress all kept messages in parallel
+  const compressed = await Promise.all(kept.map((msg) => compressMessage(msg)));
+  return compressed;
+}
+
+
+
+
+
+// ── Capsule ───────────────────────────────────────────────────────────────────
 const Capsule = {
   build(messages, url) {
     const title = this._inferTitle(messages, url);
@@ -21,10 +116,10 @@ const Capsule = {
   _inferTitle(messages, url) {
     const firstUser = messages.find((m) => m.type === "user");
     if (firstUser && firstUser.content.length > 0) {
-      return firstUser.content
-        .substring(0, 60)
-        .replace(/\n/g, " ")
-        .trim() + (firstUser.content.length > 60 ? "…" : "");
+      return (
+        firstUser.content.substring(0, 60).replace(/\n/g, " ").trim() +
+        (firstUser.content.length > 60 ? "…" : "")
+      );
     }
     try {
       const u = new URL(url);
@@ -36,7 +131,7 @@ const Capsule = {
   },
 };
 
-// ── Storage (via chrome.storage.local) ───────────────────────────────────────
+// ── Storage ───────────────────────────────────────────────────────────────────
 const STORAGE_KEY = "claude_conversations";
 const MAX_CONVERSATIONS = 50;
 
@@ -80,24 +175,17 @@ async function storageSave(conversation) {
   });
 }
 
-// ─── Scraper ─────────────────────────────────────────────────────────────────
-
+// ── Scraper ───────────────────────────────────────────────────────────────────
 /**
  * Scrape all visible messages from the Claude.ai conversation DOM.
- * Claude.ai uses a rich React SPA — selectors target semantic roles and
- * data attributes that are stable across minor UI updates.
  *
  * User messages:    <div data-testid="user-message"> … </div>
- * Assistant turns:  <div data-testid="assistant-message"> … </div>
- *
- * Fallback: any element with role="presentation" or role="row" inside a
- * scrollable conversation container.
+ * Assistant turns:  .font-claude-response
  */
 function scrapeMessages() {
   const messages = [];
   const now = new Date().toISOString();
 
-  // Get all top-level message containers in DOM order
   const allElements = document.querySelectorAll(
     '[data-testid="user-message"], .font-claude-response'
   );
@@ -112,13 +200,20 @@ function scrapeMessages() {
         messages.push({ type, content, format: "text", timestamp: now });
       }
     } else {
-      // For assistant messages, walk through child elements to capture text + code blocks in order
       const parts = [];
-
-      el.querySelectorAll('p, li, h1, h2, h3, pre.code-block__code, [role="group"] pre.code-block__code').forEach((child) => {
-        if (child.tagName === 'PRE' && child.classList.contains('code-block__code')) {
-          const code = child.querySelector('code');
-          const lang = child.closest('[role="group"]')?.querySelector('.text-text-500')?.innerText?.trim() || '';
+      el.querySelectorAll(
+        'p, li, h1, h2, h3, pre.code-block__code, [role="group"] pre.code-block__code'
+      ).forEach((child) => {
+        if (
+          child.tagName === "PRE" &&
+          child.classList.contains("code-block__code")
+        ) {
+          const code = child.querySelector("code");
+          const lang =
+            child
+              .closest('[role="group"]')
+              ?.querySelector(".text-text-500")
+              ?.innerText?.trim() || "";
           const content = code?.innerText?.trim() || child.innerText?.trim();
           if (content) parts.push(`\`\`\`${lang}\n${content}\n\`\`\``);
         } else {
@@ -128,7 +223,12 @@ function scrapeMessages() {
       });
 
       if (parts.length) {
-        messages.push({ type, content: parts.join('\n\n'), format: "text", timestamp: now });
+        messages.push({
+          type,
+          content: parts.join("\n\n"),
+          format: "text",
+          timestamp: now,
+        });
       }
     }
   });
@@ -136,33 +236,38 @@ function scrapeMessages() {
   return messages;
 }
 
-// ─── Debounced save ────────────────────────────────────────────────────────
-
+// ── Debounced save ────────────────────────────────────────────────────────────
 let _debounceTimer = null;
-const DEBOUNCE_MS = 1500; // wait 1.5 s after last DOM change before saving
+const DEBOUNCE_MS = 1500;
 
-function scheduleConversationSave() {
+async function scheduleConversationSave() {
   clearTimeout(_debounceTimer);
   _debounceTimer = setTimeout(async () => {
-    const messages = scrapeMessages();
-    if (messages.length === 0) return;
+    const rawMessages = scrapeMessages();
+    if (rawMessages.length === 0) return;
 
-    const compressed = messages
-    const capsule = Capsule.build(compressed, window.location.href);
+    // ── Compress before saving ────────────────────────────────────────────────
+    let messages;
+    try {
+      messages = await compressConversation(rawMessages);
+      
+    } catch (err) {
+      console.warn("[ContextClaw] Compression pipeline failed, using raw:", err);
+      messages = rawMessages;
+    }
+
+    const capsule = Capsule.build(messages, window.location.href);
 
     try {
       await storageSave(capsule);
-      console.log(
-        `[ContextClaw] ✅ Saved conversation "${capsule.title}" (${messages.length} messages)`
-      );
+      
     } catch (err) {
       console.error("[ContextClaw] ❌ Failed to save:", err);
     }
   }, DEBOUNCE_MS);
 }
 
-// ─── Respond to manual scrape requests from popup ─────────────────────────
-
+// ── Message listener (from popup / background) ────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "scrapeNow") {
     scheduleConversationSave();
@@ -171,18 +276,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "ping") {
     sendResponse({ ok: true, url: window.location.href });
   }
-  return false; // no async response needed here
+  return false;
 });
 
-// ─── MutationObserver ────────────────────────────────────────────────────────
-
+// ── MutationObserver ──────────────────────────────────────────────────────────
 let _observer = null;
 
 function startObserver() {
   if (_observer) return;
 
   _observer = new MutationObserver((mutations) => {
-    // Only react to meaningful changes (added nodes with text content)
     const relevant = mutations.some(
       (m) => m.addedNodes.length > 0 || m.type === "characterData"
     );
@@ -195,23 +298,20 @@ function startObserver() {
     characterData: true,
   });
 
-  console.log("[ContextClaw] 👁️ Observer started on", window.location.href);
 }
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-
-// Only run on actual conversation pages (not the home / new chat page)
+// ── Init ──────────────────────────────────────────────────────────────────────
 function isConversationPage() {
-  return /\/chat\/|\/c\/|\/conversation/.test(window.location.pathname) ||
-    // Claude.ai sometimes uses the path /<uuid>
+  return (
+    /\/chat\/|\/c\/|\/conversation/.test(window.location.pathname) ||
     /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/.test(
       window.location.pathname
-    );
+    )
+  );
 }
 
 function init() {
   if (!isConversationPage()) {
-    // Still watch for URL changes via a lightweight poll (SPA navigation)
     let lastUrl = window.location.href;
     const urlPoller = setInterval(() => {
       if (window.location.href !== lastUrl) {
@@ -229,20 +329,17 @@ function init() {
   scheduleConversationSave();
 }
 
-// Run after the DOM is interactive
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {
   init();
 }
 
-// Also handle SPA navigation (claude.ai pushes history changes)
+// SPA navigation detection
 let _lastHref = window.location.href;
 const _navObserver = new MutationObserver(() => {
   if (window.location.href !== _lastHref) {
     _lastHref = window.location.href;
-    console.log("[ContextClaw] 🔄 Navigation detected:", _lastHref);
-    // Re-init on navigation
     if (_observer) {
       _observer.disconnect();
       _observer = null;
@@ -251,9 +348,12 @@ const _navObserver = new MutationObserver(() => {
   }
 });
 
-_navObserver.observe(document.documentElement, { childList: true, subtree: false });
+_navObserver.observe(document.documentElement, {
+  childList: true,
+  subtree: false,
+});
 
-// Expose manual trigger for DevTools debugging
+// DevTools hook
 window.__contextClaw = {
   scrapeNow: scheduleConversationSave,
   scrapeMessages,
