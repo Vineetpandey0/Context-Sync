@@ -1,5 +1,13 @@
 # 🦞 Claude Context Preserver
 
+
+![Chrome Extension](https://img.shields.io/badge/Platform-Chrome%20Extension-blue)
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
+![License](https://img.shields.io/badge/License-MIT-yellow)
+![Status](https://img.shields.io/badge/Status-Active-success)
+![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)
+![Version](https://img.shields.io/github/v/release/Vineetpandey0/Claude-Context-Preserver)
+
 > **Never lose a Claude conversation again.** Save, compress, and port your AI context across sessions, accounts, and even different AI models.
 
 ```
