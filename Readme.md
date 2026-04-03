@@ -33,16 +33,17 @@
 1. [The Problem](#-the-problem)
 2. [The Solution](#-the-solution)
 3. [Features](#-features)
-4. [Architecture](#-architecture)
-5. [Installation](#-installation)
-6. [How to Use](#-how-to-use)
-7. [Setting Up Gemini API for Compression](#-setting-up-gemini-api-for-compression)
-8. [Exporting & Porting Context to Other AIs](#-exporting--porting-context-to-other-ais)
-9. [Compression Pipeline](#-compression-pipeline)
-10. [File Structure](#-file-structure)
-11. [Roadmap](#-roadmap)
-12. [Contributing](#-contributing)
-13. [License](#-license)
+4. [Preview](#-preview)
+5. [Architecture](#-architecture)
+6. [Installation](#-installation)
+7. [How to Use](#-how-to-use)
+8. [Setting Up Gemini API for Compression](#-setting-up-gemini-api-for-compression)
+9. [Exporting & Porting Context to Other AIs](#-exporting--porting-context-to-other-ais)
+10. [Compression Pipeline](#-compression-pipeline)
+11. [File Structure](#-file-structure)
+12. [Roadmap](#-roadmap)
+13. [Contributing](#-contributing)
+14. [License](#-license)
 
 ---
 
@@ -102,6 +103,31 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 | 🖥️ SPA navigation detection (no page reload needed) | ✅ Live |
 | 📋 Rolling 10-session context window | 🔧 In Progress |
 | 💉 One-click context injection button on claude.ai | 🗺️ Roadmap |
+| 🧮 Local NLP compression (no API key) | 🗺️ Roadmap |
+| 📥 View & manage downloads inside the extension | 🗺️ Roadmap |
+| 🤖 One-click inject into ChatGPT / Gemini / Mistral | 🗺️ Roadmap |
+
+---
+
+## 🖼️ Preview
+
+### Extension Popup
+![Extension Preview](assets/Preview.png)
+
+### Conversation View
+![Conversation](assets/Conversation.png)
+
+### Refreshing & Auto-Save
+![Refreshing](assets/Refreshing.png)
+
+### Export Per Conversation
+![Export Per Conversation](assets/ExportPerConversation.png)
+
+### Export All Conversations
+![Export All Conversations](assets/ExportAllConversations.png)
+
+### Save Options (JSON)
+![Save Options JSON](assets/SaveOptionsJSON.png)
 
 ---
 
@@ -190,6 +216,8 @@ Just use Claude as you normally would. The extension silently captures every mes
 
 If you want to force-save the current conversation immediately, click the 🦞 icon in your toolbar and hit the **Refresh** button.
 
+![Refreshing](assets/Refreshing.png)
+
 #### 4. Browse your saved conversations
 
 The popup shows all your saved conversations sorted by most recent. Each card shows:
@@ -197,6 +225,8 @@ The popup shows all your saved conversations sorted by most recent. Each card sh
 - Date and time saved
 - Message count
 - Expand/collapse to read messages
+
+![Conversation](assets/Conversation.png)
 
 #### 5. Search conversations
 
@@ -267,9 +297,17 @@ This is the killer feature. **You are no longer locked into Claude.**
 3. Click the **download** (↓) icon on the card
 4. A `.json` file downloads to your computer
 
+![Export Per Conversation](assets/ExportPerConversation.png)
+
 ### Export all conversations
 
 Click **"Export All"** in the footer to download everything as one JSON file.
+
+![Export All Conversations](assets/ExportAllConversations.png)
+
+### Save options
+
+![Save Options JSON](assets/SaveOptionsJSON.png)
 
 ### The JSON Capsule Format
 
@@ -390,7 +428,7 @@ Raw Conversation
 - [ ] **TF-IDF sentence scoring** — Keep only semantically dense sentences from assistant explanations
 - [ ] **Type tagging** — Tag each message as `question`, `code`, `explanation`, `decision` for structured compression
 - [ ] **Rolling window manager** — 10-session window with tiered compression (full → summary → decisions-only)
-- [ ] **Local compression** — Browser-based NLP pipeline, zero API key, zero data leaving your machine
+- [ ] **Local NLP compression** — Browser-native pipeline: TF-IDF + sentence scoring + stopword removal, zero API calls, zero data leaving your machine
 - [ ] **Token counter** — Real-time estimate of compressed capsule size vs. target AI's context window
 
 ---
@@ -406,6 +444,13 @@ claude-context-preserver/
 │   ├── popup.html         ← Extension popup markup
 │   ├── popup.js           ← Popup logic: render, search, delete, export
 │   └── popup.css          ← Dark theme UI styles
+├── assets/
+│   ├── Preview.png
+│   ├── Conversation.png
+│   ├── Refreshing.png
+│   ├── ExportPerConversation.png
+│   ├── ExportAllConversations.png
+│   └── SaveOptionsJSON.png
 ├── icons/
 │   ├── icon16.png
 │   ├── icon48.png
@@ -436,14 +481,16 @@ claude-context-preserver/
 - [ ] Session fingerprinting to detect and deduplicate identical sessions
 - [ ] Tag-based organization (group conversations by project)
 
-### v1.4
-- [ ] Local compression pipeline (no API key needed)
+### v1.4 — 🔧 Work in Progress
+- [ ] **Local NLP compression** — A fully browser-native compression pipeline with zero API calls. Uses TF-IDF scoring, stopword removal, and sentence-level importance ranking to shrink conversations without sending a single byte outside your machine. No Gemini key, no latency, no privacy trade-off.
+- [ ] **Downloads manager inside the extension** — View, rename, re-download, and delete your exported JSON capsules directly from the popup, without digging through your system's Downloads folder.
+- [ ] **One-click context injection into any AI** — Select a saved conversation and hit a single button to open ChatGPT, Gemini, Mistral, or any other AI in a new tab with the context pre-loaded in the input box, ready to send. No copy-pasting JSON manually.
 - [ ] Firefox support
-- [ ] Cross-device sync via optional encrypted cloud backup
 
 ### v2.0
 - [ ] Full "Context Capsule" standard — a universal format readable by Claude, GPT, Gemini, and local models
-- [ ] Direct "Continue in ChatGPT" / "Continue in Gemini" buttons
+- [ ] Cross-device sync via optional encrypted cloud backup
+- [ ] Direct **"Continue in ChatGPT"** / **"Continue in Gemini"** buttons on the claude.ai page itself
 
 ---
 
