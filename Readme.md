@@ -114,8 +114,6 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 ### Extension Popup
 ![Extension Preview](assets/Preview.png)
 
-### Conversation View
-![Conversation](assets/Conversation.png)
 
 
 ---
