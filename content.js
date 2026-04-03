@@ -4,19 +4,6 @@
 // ─── Inline the lib modules here (web-accessible-resources can't be require()'d
 //     directly in Manifest V3 content scripts unless injected, so we inline them)
 
-// ── Compressor ──────────────────────────────────────────────────────────────
-const Compressor = {
-  compress(messages, maxPerMessage = 2000) {
-    return messages.map((msg) => ({
-      type: msg.type,
-      content:
-        msg.content.length > maxPerMessage
-          ? msg.content.substring(0, maxPerMessage) + "…"
-          : msg.content,
-      timestamp: msg.timestamp,
-    }));
-  },
-};
 
 // ── Capsule ──────────────────────────────────────────────────────────────────
 const Capsule = {
@@ -160,7 +147,7 @@ function scheduleConversationSave() {
     const messages = scrapeMessages();
     if (messages.length === 0) return;
 
-    const compressed = Compressor.compress(messages);
+    const compressed = messages
     const capsule = Capsule.build(compressed, window.location.href);
 
     try {
