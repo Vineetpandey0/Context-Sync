@@ -117,17 +117,6 @@ No cloud servers. No sign-up. Everything runs locally in your browser.
 ### Conversation View
 ![Conversation](assets/Conversation.png)
 
-### Refreshing & Auto-Save
-![Refreshing](assets/Refreshing.png)
-
-### Export Per Conversation
-![Export Per Conversation](assets/ExportPerConversation.png)
-
-### Export All Conversations
-![Export All Conversations](assets/ExportAllConversations.png)
-
-### Save Options (JSON)
-![Save Options JSON](assets/SaveOptionsJSON.png)
 
 ---
 
@@ -216,7 +205,6 @@ Just use Claude as you normally would. The extension silently captures every mes
 
 If you want to force-save the current conversation immediately, click the 🦞 icon in your toolbar and hit the **Refresh** button.
 
-![Refreshing](assets/Refreshing.png)
 
 #### 4. Browse your saved conversations
 
@@ -303,7 +291,6 @@ This is the killer feature. **You are no longer locked into Claude.**
 
 Click **"Export All"** in the footer to download everything as one JSON file.
 
-![Export All Conversations](assets/ExportAllConversations.png)
 
 ### Save options
 
