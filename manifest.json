@@ -13,7 +13,8 @@
 
   "host_permissions": [
     "https://claude.ai/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "http://www.w3.org/2000/svg"
   ],
 
   "background": {
