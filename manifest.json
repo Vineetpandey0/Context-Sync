@@ -12,7 +12,8 @@
   ],
 
   "host_permissions": [
-    "https://claude.ai/*"
+    "https://claude.ai/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
 
   "background": {
