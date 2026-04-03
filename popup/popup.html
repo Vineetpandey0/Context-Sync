@@ -1,75 +1,83 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Claude Context Preserver</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-    rel="stylesheet"
-  />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="popup.css" />
 </head>
+
 <body>
-  <!-- Header -->
-  <header class="header">
-    <div class="header-left">
-      <span class="logo">🦞</span>
-      <div>
-        <h1 class="header-title">Claude Context Preserver</h1>
-        <p class="header-sub">Share your Claude conversations</p>
+  <div class="wrapper">
+    <!-- Header -->
+    <header class="header">
+      <div class="header-left">
+        <span class="logo">🦞</span>
+        <div>
+          <h1 class="header-title">Claude Context Preserver</h1>
+          <p class="header-sub">Share your Claude conversations</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="scrape-btn" class="btn btn-primary" title="Scrape active Claude tab now">
+          <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4v5h16V4M4 12v5h16v-5M4 20v-5h16v5" />
+            </svg></span>Refresh
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <span id="conv-count" class="stat">0 conversations</span>
+      <span id="storage-size" class="stat"></span>
+    </div>
+
+    <!-- Search -->
+    <div class="search-wrap">
+      <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg></span>
+      <input id="search-input" class="search-input" type="text" placeholder="Search conversations…"
+        autocomplete="off" />
+      <button id="clear-search" class="clear-search" title="Clear search">✕</button>
+    </div>
+
+    <!-- Conversation list -->
+    <div id="conversations-list" class="conversations-list">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon">💬</div>
+        <p class="empty-title">No conversations saved yet</p>
+        <p class="empty-hint">Open a Claude conversation and click <strong>Capture</strong></p>
       </div>
     </div>
-    <div class="header-actions">
-      <button id="scrape-btn" class="btn btn-primary" title="Scrape active Claude tab now">
-        <span class="btn-icon">⚡</span> Capture
+
+    <!-- Footer -->
+    <footer class="footer">
+      <button id="export-btn" class="btn btn-ghost" title="Export all as JSON">
+        <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v12"></path>
+            <path d="m7 10 5 5 5-5"></path>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          </svg></span> Export All
       </button>
-    </div>
-  </header>
+      <button id="clear-all-btn" class="btn btn-danger" title="Delete all saved conversations">
+        <span class="btn-icon">🗑️</span> Clear All
+      </button>
+    </footer>
 
-  <!-- Stats bar -->
-  <div class="stats-bar">
-    <span id="conv-count" class="stat">0 conversations</span>
-    <span id="storage-size" class="stat"></span>
+    <!-- Toast container -->
+    <div id="toast" class="toast" aria-live="polite"></div>
   </div>
-
-  <!-- Search -->
-  <div class="search-wrap">
-    <span class="search-icon">🔍</span>
-    <input
-      id="search-input"
-      class="search-input"
-      type="text"
-      placeholder="Search conversations…"
-      autocomplete="off"
-    />
-    <button id="clear-search" class="clear-search" title="Clear search">✕</button>
-  </div>
-
-  <!-- Conversation list -->
-  <div id="conversations-list" class="conversations-list">
-    <div class="empty-state" id="empty-state">
-      <div class="empty-icon">💬</div>
-      <p class="empty-title">No conversations saved yet</p>
-      <p class="empty-hint">Open a Claude conversation and click <strong>Capture</strong></p>
-    </div>
-  </div>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <button id="export-btn" class="btn btn-ghost" title="Export all as JSON">
-      <span class="btn-icon">📤</span> Export
-    </button>
-    <button id="clear-all-btn" class="btn btn-danger" title="Delete all saved conversations">
-      <span class="btn-icon">🗑️</span> Clear All
-    </button>
-  </footer>
-
-  <!-- Toast container -->
-  <div id="toast" class="toast" aria-live="polite"></div>
 
   <script src="popup.js"></script>
 </body>
+
 </html>
