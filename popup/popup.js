@@ -149,8 +149,9 @@ function exportAllHandler() {
 
     if (!conversations.length) return;
 
-    conversations.forEach((conv, index) => {
-      setTimeout(() => exportConversation(conv), index * 200);
+    exportConversation({
+      title: "all_conversations",
+      data: conversations
     });
   });
 }
