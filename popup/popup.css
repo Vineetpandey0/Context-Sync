@@ -161,7 +161,8 @@ body {
   font-size: 13px;
   transition: color var(--transition), background var(--transition);
 }
-.btn-icon-only:hover { color: var(--danger); background: rgba(244,63,94,.1); }
+.btn-icon-only:hover { color: var(--text-2); background: rgba(255,255,255,.06); }
+.btn-icon-only.delete-btn:hover { color: var(--danger); background: rgba(244,63,94,.1); }
 
 /* ── Stats bar ───────────────────────────────────────────────────────────── */
 .stats-bar {

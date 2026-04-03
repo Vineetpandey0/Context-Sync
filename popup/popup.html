@@ -24,10 +24,13 @@
       </div>
       <div class="header-actions">
         <button id="scrape-btn" class="btn btn-primary" title="Scrape active Claude tab now">
-          <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+          <span class="btn-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M4 4v5h16V4M4 12v5h16v-5M4 20v-5h16v5" />
-            </svg></span>Refresh
+            </svg>
+          </span>
+          <span class="btn-label">Refresh</span>
         </button>
       </div>
     </header>
@@ -40,10 +43,12 @@
 
     <!-- Search -->
     <div class="search-wrap">
-      <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+      <span class="search-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg></span>
+        </svg>
+      </span>
       <input id="search-input" class="search-input" type="text" placeholder="Search conversations…"
         autocomplete="off" />
       <button id="clear-search" class="clear-search" title="Clear search">✕</button>
@@ -54,26 +59,29 @@
       <div class="empty-state" id="empty-state">
         <div class="empty-icon">💬</div>
         <p class="empty-title">No conversations saved yet</p>
-        <p class="empty-hint">Open a Claude conversation and click <strong>Capture</strong></p>
+        <p class="empty-hint">Open a Claude conversation and click <strong>Refresh</strong></p>
       </div>
     </div>
 
     <!-- Footer -->
     <footer class="footer">
       <button id="export-btn" class="btn btn-ghost" title="Export all as JSON">
-        <span class="btn-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+        <span class="btn-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
             fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 3v12"></path>
             <path d="m7 10 5 5 5-5"></path>
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          </svg></span> Export All
+          </svg>
+        </span>
+        Export All
       </button>
       <button id="clear-all-btn" class="btn btn-danger" title="Delete all saved conversations">
         <span class="btn-icon">🗑️</span> Clear All
       </button>
     </footer>
 
-    <!-- Toast container -->
+    <!-- Toast -->
     <div id="toast" class="toast" aria-live="polite"></div>
   </div>
 
