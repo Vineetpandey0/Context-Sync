@@ -16,6 +16,7 @@ function bindUI() {
     setRefreshLoading(true);
 
     chrome.runtime.sendMessage({ action: "scrapeActiveTab" }, (response) => {
+      // Wait a moment so the content script has time to compress + save
       setTimeout(() => {
         loadAndRender();
         setRefreshLoading(false);
@@ -27,7 +28,6 @@ function bindUI() {
   // ── Clear all ────────────────────────────────────────────────────────────
   document.getElementById("clear-all-btn").addEventListener("click", () => {
     chrome.storage.local.set({ [STORAGE_KEY]: [] }, () => {
-      _allConversations = [];
       loadAndRender();
       showToast("🗑️ All conversations cleared");
     });
@@ -78,6 +78,7 @@ function loadAndRender() {
   chrome.storage.local.get([STORAGE_KEY], (res) => {
     const conversations = res[STORAGE_KEY] || [];
     renderConversations(conversations);
+    updateStats(conversations);
   });
 }
 
@@ -111,7 +112,6 @@ function renderConversations(conversations, isFiltered = false) {
   const empty = document.getElementById("empty-state");
 
   list.innerHTML = "";
-  updateStats(isFiltered ? _allConversations : conversations);
 
   if (!conversations.length) {
     empty.style.display = "flex";
