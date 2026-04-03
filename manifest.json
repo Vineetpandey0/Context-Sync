@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Claude Context Preserver",
-  "version": "1.0.0",
-  "description": "Automatically save and restore Claude.ai conversation context across sessions and accounts",
+  "name": "ContextClaw — Claude Context Preserver",
+  "version": "1.1.0",
+  "description": "Automatically save and restore Claude.ai conversation context across sessions.",
 
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
 
   "host_permissions": [
@@ -22,13 +23,13 @@
     {
       "matches": ["https://claude.ai/*"],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_idle"
     }
   ],
 
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Claude Context Preserver"
+    "default_title": "ContextClaw"
   },
 
   "web_accessible_resources": [
