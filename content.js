@@ -109,40 +109,40 @@ async function storageSave(conversation) {
 function scrapeMessages() {
   const messages = [];
   const now = new Date().toISOString();
-  const userEls = document.querySelectorAll('[data-testid="user-message"]');
-  const assistantEls = document.querySelectorAll('.font-claude-response');
 
-  // CODE BLOCKS (separate pipeline)
-  const codeBlocks = document.querySelectorAll('#wiggle-file-content');
-  codeBlocks.forEach(block => {
-    const content = block.innerText?.trim();
-    if (content) {
-      messages.push({
-        type: "assistant",
-        content,
-        format: "code",
-        timestamp: now,
-      });
-    }
-  });
-
-  // NORMAL MESSAGES
-  const all = [
-    ...Array.from(userEls).map(el => ({ el, type: "user" })),
-    ...Array.from(assistantEls).map(el => ({ el, type: "assistant" }))
-  ].sort((a, b) =>
-    a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+  // Get all top-level message containers in DOM order
+  const allElements = document.querySelectorAll(
+    '[data-testid="user-message"], .font-claude-response'
   );
 
-  all.forEach(({ el, type }) => {
-    const content = el.innerText?.trim();
-    if (content) {
-      messages.push({
-        type,
-        content,
-        format: "text",
-        timestamp: now,
+  allElements.forEach((el) => {
+    const isUser = el.matches('[data-testid="user-message"]');
+    const type = isUser ? "user" : "assistant";
+
+    if (isUser) {
+      const content = el.innerText?.trim();
+      if (content) {
+        messages.push({ type, content, format: "text", timestamp: now });
+      }
+    } else {
+      // For assistant messages, walk through child elements to capture text + code blocks in order
+      const parts = [];
+
+      el.querySelectorAll('p, li, h1, h2, h3, pre.code-block__code, [role="group"] pre.code-block__code').forEach((child) => {
+        if (child.tagName === 'PRE' && child.classList.contains('code-block__code')) {
+          const code = child.querySelector('code');
+          const lang = child.closest('[role="group"]')?.querySelector('.text-text-500')?.innerText?.trim() || '';
+          const content = code?.innerText?.trim() || child.innerText?.trim();
+          if (content) parts.push(`\`\`\`${lang}\n${content}\n\`\`\``);
+        } else {
+          const text = child.innerText?.trim();
+          if (text) parts.push(text);
+        }
       });
+
+      if (parts.length) {
+        messages.push({ type, content: parts.join('\n\n'), format: "text", timestamp: now });
+      }
     }
   });
 
