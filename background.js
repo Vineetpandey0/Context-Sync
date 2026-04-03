@@ -2,7 +2,7 @@
 
 const STORAGE_KEY = "claude_conversations";
 
-const GEMINI_API_KEY = "AIzaSyC8eLv-AxJ7kpylPuD8ckDD0g8L9yDlRzM"; // keep as is for now
+const GEMINI_API_KEY = ""; // keep as is for now
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
