@@ -81,7 +81,7 @@ async function tryInjectContext() {
   const input = await waitForDeepSeekInput();
   if (!input) { showBanner("Could not find DeepSeek input field.", true); return; }
 
-  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) {}
+  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) { }
 
   injectIntoDeepSeek(input, pending.context);
   await new Promise(r => setTimeout(r, 500));
@@ -110,8 +110,8 @@ function scrapeCurrentConversation() {
 
   allMessages.forEach(el => {
     const isUser = el.classList.contains("fbb737a4") ||
-                   el.closest("[class*='user']") !== null ||
-                   el.querySelector("textarea") !== null;
+      el.closest("[class*='user']") !== null ||
+      el.querySelector("textarea") !== null;
     const type = isUser ? "user" : "assistant";
     const content = el.innerText?.trim();
     if (content) messages.push({ type, content, format: "text", timestamp: now });
@@ -181,8 +181,8 @@ function sendFromThisPage(target) {
 
   const context = lines.join("\n");
   const AI_URLS = {
-    claude:  "https://claude.ai/new",
-    gemini:  "https://gemini.google.com/app",
+    claude: "https://claude.ai/new",
+    gemini: "https://gemini.google.com/app",
     chatgpt: "https://chatgpt.com/",
   };
 
@@ -199,11 +199,11 @@ function sendFromThisPage(target) {
 // AI options for DeepSeek panel (excludes DeepSeek itself)
 const CC_AI_OPTIONS = [
   {
-    id: "claude",  label: "Claude",  color: "#d97706", bg: "rgba(217,119,6,0.12)",
+    id: "claude", label: "Claude", color: "#d97706", bg: "rgba(217,119,6,0.12)",
     svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>`
   },
   {
-    id: "gemini",  label: "Gemini",  color: "#4285F4", bg: "rgba(66,133,244,0.12)",
+    id: "gemini", label: "Gemini", color: "#4285F4", bg: "rgba(66,133,244,0.12)",
     svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C9.5 7.5 6.5 9.5 2 12c4.5 2.5 7.5 4.5 10 10 2.5-5.5 5.5-7.5 10-10-4.5-2.5-7.5-4.5-10-10z" fill="#4285F4"/></svg>`
   },
   {
@@ -407,7 +407,7 @@ function createAskAIButton() {
       stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
       <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
     </svg>
-    Ask AI
+    Export
   `;
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
