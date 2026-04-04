@@ -188,7 +188,7 @@ async function sendToAI(target) {
   if (!ctx) { showToast("No messages to send."); return; }
 
   chrome.runtime.sendMessage({ action: "openAIWithContext", target, context: ctx }, (res) => {
-    const names = { gemini: "Gemini", chatgpt: "ChatGPT", deepseek: "DeepSeek" };
+    const names = { claude: "Claude", gemini: "Gemini", chatgpt: "ChatGPT", deepseek: "DeepSeek" };
     showToast(res?.ok ? `↗ Opening ${names[target]}…` : "Failed to open tab.");
   });
 }
@@ -498,7 +498,44 @@ function retryInject() {
   if (!document.getElementById(CC_BTN_ID)) setTimeout(retryInject, 400);
 }
 
+// ── Pending context injection (receive context from other AIs) ────────────────
+function checkAndInjectPendingContext() {
+  try {
+    chrome.storage.session.get(["pending_context_inject"], (result) => {
+      const pending = result["pending_context_inject"];
+      if (!pending) return;
+      if (pending.target !== "claude" || Date.now() - pending.ts > 60000) return;
+      chrome.storage.session.remove(["pending_context_inject"]);
+
+      const context = pending.context;
+      let attempts = 0;
+      const maxAttempts = 20;
+
+      const poll = setInterval(() => {
+        attempts++;
+        const el = document.querySelector('div[data-testid="chat-input"][contenteditable="true"]');
+        if (el) {
+          clearInterval(poll);
+          el.focus();
+          document.execCommand("selectAll", false, null);
+          document.execCommand("delete", false, null);
+          document.execCommand("insertText", false, context);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          // Show success banner
+          showToast("✓ Context injected — review and send!");
+        } else if (attempts >= maxAttempts) {
+          clearInterval(poll);
+          showToast("⚠️ Could not find Claude input field.");
+        }
+      }, 500);
+    });
+  } catch (e) {
+    // chrome.storage.session may not be available in all contexts — silently fail
+  }
+}
+
 function init() {
+  checkAndInjectPendingContext();
   if (!isConversationPage()) {
     let last = window.location.href;
     const poll = setInterval(() => {

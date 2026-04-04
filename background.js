@@ -34,8 +34,9 @@ async function callGemini(systemPrompt, userPrompt) {
 
 // ── AI target URLs ──────────────────────────────────────────────
 const AI_URLS = {
-  gemini: "https://gemini.google.com/app",
-  chatgpt: "https://chatgpt.com/",
+  claude:   "https://claude.ai/new",
+  gemini:   "https://gemini.google.com/app",
+  chatgpt:  "https://chatgpt.com/",
   deepseek: "https://chat.deepseek.com/",
 };
 
