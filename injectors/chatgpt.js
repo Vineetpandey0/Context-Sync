@@ -450,7 +450,37 @@ function retryInjectButton() {
   }
 }
 
-// BLOCK E — Entry point
+// BLOCK E — Auto-save for popup display
+const CC_STORAGE_KEY = "claude_conversations";
+
+function scrapeAndSave() {
+  const messages = scrapeCurrentConversation();
+  if (!messages.length) return Promise.resolve({ ok: false, reason: "no messages" });
+  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "ChatGPT conversation";
+  const convId = `chatgpt_${window.location.href}`;
+  return new Promise((resolve) => {
+    chrome.storage.local.get([CC_STORAGE_KEY], (res) => {
+      const all = res[CC_STORAGE_KEY] || [];
+      const idx = all.findIndex(c => c.id === convId);
+      const entry = {
+        id: convId, title, url: window.location.href,
+        messages, savedAt: new Date().toISOString(),
+        source: "chatgpt", version: 1,
+      };
+      if (idx >= 0) all[idx] = entry; else all.unshift(entry);
+      chrome.storage.local.set({ [CC_STORAGE_KEY]: all }, () => resolve({ ok: true }));
+    });
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.action === "scrapeNow") {
+    scrapeAndSave().then(sendResponse);
+    return true;
+  }
+});
+
+// BLOCK F — Entry point
 function init() {
   tryInjectContext();
   retryInjectButton();

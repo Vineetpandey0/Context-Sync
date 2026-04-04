@@ -64,15 +64,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
-    // ── Scrape active Claude tab ──────────────────────────────────
+    // ── Scrape active tab (any supported AI site) ─────────────────
     case "scrapeActiveTab": {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0];
+        if (!tab?.url) { sendResponse({ ok: false, error: "No active tab" }); return; }
 
-        if (!tab || !tab.url || !tab.url.includes("claude.ai")) {
-          sendResponse({ ok: false, error: "No Claude tab" });
-          return;
-        }
+        const supported = ["claude.ai", "gemini.google.com", "chatgpt.com", "chat.deepseek.com"];
+        const isSupported = supported.some(h => tab.url.includes(h));
+        if (!isSupported) { sendResponse({ ok: false, error: "Unsupported site" }); return; }
 
         chrome.tabs.sendMessage(tab.id, { action: "scrapeNow" }, (response) => {
           if (chrome.runtime.lastError) {
@@ -82,7 +82,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: true, response });
         });
       });
-
       return true;
     }
 

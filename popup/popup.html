@@ -4,10 +4,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Claude Context Preserver</title>
+  <title>Context Preserver</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="popup.css" />
 </head>
 
@@ -16,68 +16,67 @@
     <!-- Header -->
     <header class="header">
       <div class="header-left">
-        <span class="logo">🦞</span>
+        <div class="logo-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
         <div>
-          <h1 class="header-title">Claude Context Preserver</h1>
-          <p class="header-sub">Share your Claude conversations</p>
+          <h1 class="header-title">Context Preserver</h1>
+          <p class="header-sub">Current &amp; exported conversations</p>
         </div>
       </div>
-      <div class="header-actions">
-        <button id="scrape-btn" class="btn btn-primary" title="Scrape active Claude tab now">
-          <span class="btn-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 4v5h16V4M4 12v5h16v-5M4 20v-5h16v5" />
-            </svg>
-          </span>
-          <span class="btn-label">Refresh</span>
-        </button>
-      </div>
     </header>
-
-    <!-- Stats bar -->
-    <div class="stats-bar">
-      <span id="conv-count" class="stat">0 conversations</span>
-      <span id="storage-size" class="stat"></span>
-    </div>
 
     <!-- Search -->
     <div class="search-wrap">
       <span class="search-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
           fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
       </span>
-      <input id="search-input" class="search-input" type="text" placeholder="Search conversations…"
-        autocomplete="off" />
-      <button id="clear-search" class="clear-search" title="Clear search">✕</button>
+      <input id="search-input" class="search-input" type="text" placeholder="Search…" autocomplete="off" />
+      <button id="clear-search" class="clear-search" title="Clear">✕</button>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="stats-bar">
+      <span id="conv-count" class="stat">0 conversations</span>
     </div>
 
     <!-- Conversation list -->
     <div id="conversations-list" class="conversations-list">
       <div class="empty-state" id="empty-state">
-        <div class="empty-icon">💬</div>
-        <p class="empty-title">No conversations saved yet</p>
-        <p class="empty-hint">Open a Claude conversation and click <strong>Refresh</strong></p>
+        <div class="empty-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <p class="empty-title">No conversations here</p>
+        <p class="empty-hint">Open a Claude conversation — it will appear automatically. Exported conversations from other AIs also appear here.</p>
       </div>
     </div>
 
     <!-- Footer -->
     <footer class="footer">
       <button id="export-btn" class="btn btn-ghost" title="Export all as JSON">
-        <span class="btn-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 3v12"></path>
-            <path d="m7 10 5 5 5-5"></path>
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-          </svg>
-        </span>
-        Export All
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        </svg>
+        Export all
       </button>
-      <button id="clear-all-btn" class="btn btn-danger" title="Delete all saved conversations">
-        <span class="btn-icon">🗑️</span> Clear All
+      <button id="clear-all-btn" class="btn btn-danger" title="Delete all">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+          fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+        </svg>
+        Clear all
       </button>
     </footer>
 

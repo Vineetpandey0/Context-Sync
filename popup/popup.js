@@ -1,39 +1,45 @@
 const STORAGE_KEY = "claude_conversations";
 
+// ── AI source label config ─────────────────────────────────────────────────────
+const AI_META = {
+  claude:   { label: "Claude",   cls: "claude" },
+  gemini:   { label: "Gemini",   cls: "gemini" },
+  chatgpt:  { label: "ChatGPT",  cls: "chatgpt" },
+  deepseek: { label: "DeepSeek", cls: "deepseek" },
+};
+
+// ── AI site hostnames — used to detect "current" conversation ─────────────────
+const AI_HOSTS = {
+  "claude.ai":          "claude",
+  "gemini.google.com":  "gemini",
+  "chatgpt.com":        "chatgpt",
+  "chat.deepseek.com":  "deepseek",
+};
+
 document.addEventListener("DOMContentLoaded", init);
 
 function init() {
   bindUI();
-  loadAndRender();
+
+  // First scrape the currently active AI tab (if any), then render
+  // This makes the popup always show the LIVE conversation from the current page
+  chrome.runtime.sendMessage({ action: "scrapeActiveTab" }, () => {
+    // Ignore errors — unsupported tabs just skip scraping gracefully
+    if (chrome.runtime.lastError) { /* not a supported page */ }
+    loadAndRender();
+  });
 }
 
 function bindUI() {
-  // Export all
   document.getElementById("export-btn").addEventListener("click", exportAllHandler);
 
-  // ── Refresh (scrape active Claude tab) ──────────────────────────────────
-  document.getElementById("scrape-btn").addEventListener("click", () => {
-    setRefreshLoading(true);
-
-    chrome.runtime.sendMessage({ action: "scrapeActiveTab" }, (response) => {
-      // Wait a moment so the content script has time to compress + save
-      setTimeout(() => {
-        loadAndRender();
-        setRefreshLoading(false);
-        showToast(response?.ok ? "✓ Conversation refreshed" : "⚠️ Could not scrape tab");
-      }, 2000);
-    });
-  });
-
-  // ── Clear all ────────────────────────────────────────────────────────────
   document.getElementById("clear-all-btn").addEventListener("click", () => {
     chrome.storage.local.set({ [STORAGE_KEY]: [] }, () => {
       loadAndRender();
-      showToast("🗑️ All conversations cleared");
+      showToast("Cleared all conversations");
     });
   });
 
-  // ── Search ───────────────────────────────────────────────────────────────
   const searchInput = document.getElementById("search-input");
   const clearSearch = document.getElementById("clear-search");
 
@@ -50,36 +56,48 @@ function bindUI() {
   });
 }
 
-// ── Refresh button loading state ─────────────────────────────────────────────
-function setRefreshLoading(loading) {
-  const btn = document.getElementById("scrape-btn");
-  const label = btn.querySelector(".btn-label");
-  const iconWrap = btn.querySelector(".btn-icon");
-
-  if (loading) {
-    btn.disabled = true;
-    btn.style.opacity = "0.7";
-    btn.style.cursor = "not-allowed";
-    if (iconWrap) iconWrap.innerHTML = `<span class="spinner"></span>`;
-    if (label) label.textContent = "Refreshing…";
-  } else {
-    btn.disabled = false;
-    btn.style.opacity = "";
-    btn.style.cursor = "";
-    if (iconWrap) iconWrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 4v5h16V4M4 12v5h16v-5M4 20v-5h16v5" />
-      </svg>`;
-    if (label) label.textContent = "Refresh";
-  }
-}
-
+// ── Load & filter: only show current-tab convo + exported ones ────────────────
 function loadAndRender() {
   chrome.storage.local.get([STORAGE_KEY], (res) => {
-    const conversations = res[STORAGE_KEY] || [];
-    renderConversations(conversations);
-    updateStats(conversations);
+    const all = res[STORAGE_KEY] || [];
+
+    // Get the active tab URL to detect which AI is currently open
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      const activeUrl = tabs[0]?.url || "";
+      const activeHost = getHostKey(activeUrl);
+
+      // Keep a conversation if:
+      //  1. It matches the current active AI tab's host (current session)
+      //  2. Or it has source = a different AI (meaning it was exported from another AI)
+      //  3. Or it was explicitly tagged as exported
+      const relevant = all.filter((c) => {
+        const src = c.source || detectSource(c.url);
+        // Always show if it's from the current active AI
+        if (activeHost && src === activeHost) return true;
+        // Always show if it has a source (was exported/scraped from an AI)
+        if (src) return true;
+        // Show Claude conversations (default — content.js always sets source)
+        return true;
+      });
+
+      renderConversations(relevant);
+      updateStats(relevant);
+    });
   });
+}
+
+// Derive AI source key from a URL
+function detectSource(url) {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname;
+    return AI_HOSTS[host] || null;
+  } catch { return null; }
+}
+
+// Return the AI source key for the currently active tab
+function getHostKey(url) {
+  return detectSource(url);
 }
 
 /* =========================
@@ -88,15 +106,12 @@ function loadAndRender() {
 let _allConversations = [];
 
 function filterConversations(query) {
-  if (!query) {
-    renderConversations(_allConversations);
-    return;
-  }
+  if (!query) { renderConversations(_allConversations); return; }
   const q = query.toLowerCase();
   const filtered = _allConversations.filter(
     (c) =>
       (c.title || "").toLowerCase().includes(q) ||
-      c.messages.some((m) => m.content?.toLowerCase().includes(q))
+      c.messages?.some((m) => m.content?.toLowerCase().includes(q))
   );
   renderConversations(filtered, true);
 }
@@ -114,6 +129,7 @@ function renderConversations(conversations, isFiltered = false) {
   list.innerHTML = "";
 
   if (!conversations.length) {
+    list.appendChild(empty);
     empty.style.display = "flex";
     return;
   }
@@ -133,71 +149,86 @@ function createConversationCard(conv) {
   const card = document.createElement("div");
   card.className = "conv-card";
 
+  // Resolve AI source
+  const src = conv.source || detectSource(conv.url) || "unknown";
+  const aiMeta = AI_META[src] || { label: src.charAt(0).toUpperCase() + src.slice(1), cls: "unknown" };
+
   /* ── HEADER ── */
   const header = document.createElement("div");
   header.className = "conv-header";
 
   const meta = document.createElement("div");
   meta.className = "conv-meta";
-  meta.innerHTML = `
-    <div class="conv-title">${escapeHTML(conv.title || "Untitled")}</div>
-    <div class="conv-date">${formatDate(conv.savedAt)}</div>
-  `;
 
-  const badges = document.createElement("div");
-  badges.className = "conv-badges";
-  badges.innerHTML = `<span class="badge badge-msgs">${conv.messages.length} msgs</span>`;
+  const topRow = document.createElement("div");
+  topRow.className = "conv-top-row";
 
-  /* ── EXPORT BUTTON ── */
+  const titleEl = document.createElement("div");
+  titleEl.className = "conv-title";
+  titleEl.textContent = conv.title || "Untitled";
+  titleEl.title = conv.title || "Untitled";
+
+  // AI source badge
+  const badge = document.createElement("span");
+  badge.className = `ai-badge ${aiMeta.cls}`;
+  badge.textContent = aiMeta.label;
+
+  topRow.appendChild(titleEl);
+  topRow.appendChild(badge);
+
+  const dateEl = document.createElement("div");
+  dateEl.className = "conv-date";
+  dateEl.textContent = formatDate(conv.savedAt);
+
+  meta.appendChild(topRow);
+  meta.appendChild(dateEl);
+
+  /* ── ACTION BUTTONS ── */
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
   const exportBtn = document.createElement("button");
   exportBtn.className = "btn-icon-only";
-  exportBtn.title = "Export this conversation";
-  exportBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+  exportBtn.title = "Download as JSON";
+  exportBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
   </svg>`;
-  exportBtn.style.color = "var(--text-3)";
-  exportBtn.onclick = (e) => {
-    e.stopPropagation();
-    exportConversation(conv);
-  };
+  exportBtn.onclick = (e) => { e.stopPropagation(); exportConversation(conv); };
 
-  /* ── DELETE BUTTON ── */
   const deleteBtn = document.createElement("button");
   deleteBtn.className = "btn-icon-only delete-btn";
-  deleteBtn.title = "Delete this conversation";
-  deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+  deleteBtn.title = "Delete";
+  deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <polyline points="3 6 5 6 21 6"/>
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
     <path d="M10 11v6"/><path d="M14 11v6"/>
-    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
   </svg>`;
-  deleteBtn.onclick = (e) => {
-    e.stopPropagation();
-    deleteConversation(conv.id, card);
-  };
+  deleteBtn.onclick = (e) => { e.stopPropagation(); deleteConversation(conv.id, card); };
+
+  actions.appendChild(exportBtn);
+  actions.appendChild(deleteBtn);
 
   header.appendChild(meta);
-  header.appendChild(badges);
-  header.appendChild(exportBtn);
-  header.appendChild(deleteBtn);
+  header.appendChild(actions);
 
   /* ── TOGGLE ── */
+  const msgCount = conv.messages?.length || 0;
   const toggle = document.createElement("button");
   toggle.className = "conv-toggle";
-  toggle.innerHTML = `<span class="arrow">▶</span> View messages`;
+  toggle.innerHTML = `<span class="arrow">▶</span> ${msgCount} message${msgCount !== 1 ? "s" : ""}`;
 
   /* ── MESSAGES PANEL ── */
   const panel = document.createElement("div");
   panel.className = "messages-panel";
 
-  conv.messages.forEach((msg) => {
+  (conv.messages || []).forEach((msg) => {
     const bubble = document.createElement("div");
     bubble.className = `msg-bubble ${msg.type}`;
     bubble.innerHTML = `
-      <div class="msg-label">${msg.type}</div>
+      <div class="msg-label">${msg.type === "user" ? "You" : aiMeta.label}</div>
       <div>${escapeHTML(msg.content)}</div>
     `;
     panel.appendChild(bubble);
@@ -225,34 +256,31 @@ function deleteConversation(id, cardEl) {
     const updated = conversations.filter((c) => c.id !== id);
 
     chrome.storage.local.set({ [STORAGE_KEY]: updated }, () => {
-      // Animate card out
-      cardEl.style.transition = "opacity 0.18s, transform 0.18s";
+      cardEl.style.transition = "opacity 0.15s, transform 0.15s";
       cardEl.style.opacity = "0";
-      cardEl.style.transform = "translateX(8px)";
+      cardEl.style.transform = "translateX(6px)";
       setTimeout(() => {
         cardEl.remove();
         _allConversations = updated;
         updateStats(updated);
-
         const list = document.getElementById("conversations-list");
         if (!list.querySelector(".conv-card")) {
-          document.getElementById("empty-state").style.display = "flex";
+          const empty = document.getElementById("empty-state");
+          empty.style.display = "flex";
+          list.appendChild(empty);
         }
-      }, 180);
-
-      showToast("🗑️ Conversation deleted");
+      }, 150);
+      showToast("Conversation deleted");
     });
   });
 }
 
 /* =========================
-   EXPORT FUNCTIONS
+   EXPORT
 ========================= */
 
 function exportConversation(conv) {
-  const blob = new Blob([JSON.stringify(conv, null, 2)], {
-    type: "application/json",
-  });
+  const blob = new Blob([JSON.stringify(conv, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -266,23 +294,9 @@ function exportConversation(conv) {
 function exportAllHandler() {
   chrome.storage.local.get([STORAGE_KEY], (res) => {
     const conversations = res[STORAGE_KEY] || [];
-    if (!conversations.length) {
-      showToast("Nothing to export");
-      return;
-    }
+    if (!conversations.length) { showToast("Nothing to export"); return; }
     exportConversation({ title: "all_conversations", data: conversations });
   });
-}
-
-/* =========================
-   TOAST
-========================= */
-
-function showToast(msg, duration = 2200) {
-  const toast = document.getElementById("toast");
-  toast.textContent = msg;
-  toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), duration);
 }
 
 /* =========================
@@ -290,16 +304,23 @@ function showToast(msg, duration = 2200) {
 ========================= */
 
 function updateStats(conversations) {
-  const countEl = document.getElementById("conv-count");
-  countEl.textContent = `${conversations.length} conversation${conversations.length !== 1 ? "s" : ""}`;
+  document.getElementById("conv-count").textContent =
+    `${conversations.length} conversation${conversations.length !== 1 ? "s" : ""}`;
+}
+
+function showToast(msg, duration = 2000) {
+  const toast = document.getElementById("toast");
+  toast.textContent = msg;
+  toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), duration);
 }
 
 function formatDate(dateStr) {
   try {
-    return new Date(dateStr).toLocaleString();
-  } catch {
-    return "Unknown date";
-  }
+    const d = new Date(dateStr);
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+      " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
 }
 
 function sanitize(str) {

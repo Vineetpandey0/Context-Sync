@@ -68,6 +68,7 @@ const Capsule = {
       id: `conv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       title, url, messages,
       savedAt: new Date().toISOString(),
+      source: "claude",
       version: 1,
     };
   },

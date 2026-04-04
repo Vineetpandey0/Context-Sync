@@ -217,36 +217,56 @@ function ensureStyles() {
   const s = document.createElement("style");
   s.id = "cc-styles";
   s.textContent = `
+    /* ── Export button: matches DeepSeek ds-toggle-button--md style ── */
     #cc-ask-ai-btn {
       display: inline-flex !important;
       align-items: center !important;
-      gap: 5px !important;
-      padding: 0 10px !important;
+      gap: 4px !important;
+      padding: 0 8px !important;
       height: 32px !important;
+      min-width: 0 !important;
       background: transparent !important;
-      border: 1px solid rgba(255,255,255,0.15) !important;
+      border: 1.5px solid var(--dsw-alias-border-secondary, rgba(255,255,255,0.12)) !important;
       border-radius: 8px !important;
-      color: rgba(255,255,255,0.65) !important;
+      color: var(--dsw-alias-label-primary, rgba(255,255,255,0.7)) !important;
       cursor: pointer !important;
-      font-family: system-ui, sans-serif !important;
-      font-size: 12px !important;
-      font-weight: 600 !important;
-      transition: background 0.15s, border-color 0.15s, color 0.15s !important;
+      font-family: var(--ds-font-family, system-ui, sans-serif) !important;
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      line-height: 1 !important;
+      transition: background 0.15s !important;
       flex-shrink: 0 !important;
       white-space: nowrap !important;
       outline: none !important;
       box-shadow: none !important;
-      vertical-align: middle !important;
+      position: relative !important;
+      transform: translateZ(0px) !important;
+      user-select: none !important;
     }
     #cc-ask-ai-btn:hover {
-      background: rgba(255,255,255,0.07) !important;
-      border-color: rgba(255,255,255,0.3) !important;
-      color: rgba(255,255,255,0.9) !important;
+      background: rgba(255,255,255,0.06) !important;
     }
-    #cc-ask-ai-btn.cc-active {
-      background: rgba(255,255,255,0.1) !important;
-      border-color: rgba(255,255,255,0.35) !important;
-      color: rgba(255,255,255,0.95) !important;
+    #cc-ask-ai-btn.cc-active,
+    #cc-ask-ai-btn[aria-expanded="true"] {
+      background: rgba(255,255,255,0.06) !important;
+      color: var(--dsw-alias-brand-text, #4d8eff) !important;
+      border-color: transparent !important;
+    }
+    #cc-ask-ai-btn .cc-btn-icon {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 14px !important;
+      height: 14px !important;
+      font-size: 14px !important;
+      color: inherit !important;
+      flex-shrink: 0 !important;
+    }
+    #cc-ask-ai-btn .cc-btn-label {
+      font-size: 13px !important;
+      font-weight: 500 !important;
+      color: inherit !important;
+      line-height: 1 !important;
     }
     #cc-ask-ai-panel {
       position: fixed !important;
@@ -403,11 +423,13 @@ function createAskAIButton() {
   btn.type = "button";
   btn.title = "Send this conversation to another AI";
   btn.innerHTML = `
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-    </svg>
-    Export
+    <div class="cc-btn-icon">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+      </svg>
+    </div>
+    <span class="cc-btn-label">Export</span>
   `;
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -458,7 +480,37 @@ function retryInjectButton() {
   }
 }
 
-// BLOCK E — Entry point
+// BLOCK E — Auto-save for popup display
+const CC_STORAGE_KEY = "claude_conversations";
+
+function scrapeAndSave() {
+  const messages = scrapeCurrentConversation();
+  if (!messages.length) return Promise.resolve({ ok: false, reason: "no messages" });
+  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "DeepSeek conversation";
+  const convId = `deepseek_${window.location.href}`;
+  return new Promise((resolve) => {
+    chrome.storage.local.get([CC_STORAGE_KEY], (res) => {
+      const all = res[CC_STORAGE_KEY] || [];
+      const idx = all.findIndex(c => c.id === convId);
+      const entry = {
+        id: convId, title, url: window.location.href,
+        messages, savedAt: new Date().toISOString(),
+        source: "deepseek", version: 1,
+      };
+      if (idx >= 0) all[idx] = entry; else all.unshift(entry);
+      chrome.storage.local.set({ [CC_STORAGE_KEY]: all }, () => resolve({ ok: true }));
+    });
+  });
+}
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.action === "scrapeNow") {
+    scrapeAndSave().then(sendResponse);
+    return true;
+  }
+});
+
+// BLOCK F — Entry point
 function init() {
   tryInjectContext();
   retryInjectButton();
