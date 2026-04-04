@@ -163,7 +163,7 @@ Since this extension is not yet on the Chrome Web Store, you'll install it in **
 Clone or download this repository:
 
 ```bash
-git clone https://github.com/yourusername/claude-context-preserver.git
+git clone [https://github.com/yourusername/claude-context-preserver.git](https://github.com/Vineetpandey0/Claude-Context-Preserver.git)
 cd claude-context-preserver
 ```
 
