@@ -1,64 +1,98 @@
 // injectors/chatgpt.js
 // Runs on chatgpt.com
-// BLOCK A — Existing pending context receiver (DO NOT CHANGE)
+// Storage: chrome.storage.LOCAL (session is unreliable in content scripts)
 
 const PENDING_INJECT_KEY = "pending_context_inject";
 
-async function getPendingContext() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.session.get([PENDING_INJECT_KEY], (result) => {
-        const pending = result[PENDING_INJECT_KEY];
-        if (!pending) { resolve(null); return; }
-        if (pending.target !== "chatgpt" || Date.now() - pending.ts > 60000) {
-          resolve(null); return;
-        }
-        chrome.storage.session.remove([PENDING_INJECT_KEY], () => resolve(pending.context));
-      });
-    } catch (e) { resolve(null); }
-  });
+// ── Wait for ChatGPT's ProseMirror input to mount
+async function waitForChatGPTInput(maxRetries = 60) {
+  for (let i = 0; i < maxRetries; i++) {
+    const el = findChatGPTInput();
+    if (el) return el;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return null;
 }
 
-function injectIntoChatGPT(context) {
-  const selectors = [
-    "#prompt-textarea",
-    "div[contenteditable='true'][data-id='root']",
-    "div.ProseMirror[contenteditable='true']",
-    "div[contenteditable='true']",
-    "textarea",
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (!el) continue;
+function findChatGPTInput() {
+  // Primary: confirmed ChatGPT ProseMirror selector
+  const pm = document.querySelector('#prompt-textarea');
+  if (pm && pm.offsetParent !== null) return pm;
+  const pm2 = document.querySelector('div.ProseMirror[contenteditable="true"]');
+  if (pm2 && pm2.offsetParent !== null) return pm2;
+  const ce = document.querySelector('div[contenteditable="true"][data-id="root"]');
+  if (ce && ce.offsetParent !== null) return ce;
+  // Fallback: any visible contenteditable
+  for (const el of document.querySelectorAll('[contenteditable="true"]')) {
+    if (el.offsetParent !== null) return el;
+  }
+  return null;
+}
+
+function injectIntoChatGPT(el, context) {
+  el.focus();
+  if (el.tagName === "TEXTAREA") {
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    nativeSetter ? nativeSetter.call(el, context) : (el.value = context);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  } else {
+    // ProseMirror: use execCommand insertText (correct for React synthetic events)
     el.focus();
-    if (el.tagName === "TEXTAREA") {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      if (nativeSetter) { nativeSetter.call(el, context); el.dispatchEvent(new Event("input", { bubbles: true })); }
-      else { el.value = context; el.dispatchEvent(new Event("input", { bubbles: true })); }
-    } else {
-      el.innerHTML = "";
-      document.execCommand("selectAll", false, null);
-      document.execCommand("delete", false, null);
-      document.execCommand("insertText", false, context);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: context }));
-    }
-    showBanner("Context injected — review and send!");
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    document.execCommand("insertText", false, context);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: context }));
+  }
+}
+
+async function submitChatGPTInput() {
+  for (let i = 0; i < 20; i++) {
+    const btn = document.querySelector(
+      '[data-testid="send-button"]:not([disabled]),' +
+      'button[aria-label="Send message"]:not([disabled]),' +
+      'button[aria-label*="Send"]:not([disabled])'
+    );
+    if (btn) { btn.click(); return true; }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const inp = findChatGPTInput();
+  if (inp) {
+    inp.focus();
+    inp.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter", code: "Enter", keyCode: 13,
+      bubbles: true, cancelable: true, composed: true,
+    }));
     return true;
   }
   return false;
 }
 
 async function tryInjectContext() {
-  const context = await getPendingContext();
-  if (!context) return;
-  let attempts = 0;
-  const poll = setInterval(() => {
-    attempts++;
-    const success = injectIntoChatGPT(context);
-    if (success || attempts >= 30) clearInterval(poll);
-  }, 500);
+  let pending;
+  try {
+    const result = await chrome.storage.local.get([PENDING_INJECT_KEY]);
+    pending = result[PENDING_INJECT_KEY];
+  } catch (e) { return; }
+
+  if (!pending) return;
+  if (pending.target !== "chatgpt") return;
+  if (Date.now() - pending.ts > 60000) {
+    await chrome.storage.local.remove([PENDING_INJECT_KEY]); return;
+  }
+
+  const input = await waitForChatGPTInput();
+  if (!input) { showBanner("Could not find ChatGPT input field.", true); return; }
+
+  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) {}
+
+  injectIntoChatGPT(input, pending.context);
+  await new Promise(r => setTimeout(r, 500));
+  showBanner("Sending context to ChatGPT…");
+  const ok = await submitChatGPTInput();
+  if (!ok) showBanner("Injected — please press Send manually.", true);
 }
+
 
 // BLOCK B — ChatGPT conversation scraper
 function scrapeCurrentConversation() {
@@ -143,9 +177,10 @@ function sendFromThisPage(target) {
   };
 
   try {
-    chrome.storage.session.set({
-      pending_context_inject: { target, context, ts: Date.now() }
-    }, () => { window.open(AI_URLS[target], "_blank"); });
+    chrome.storage.local.set(
+      { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
+      () => window.open(AI_URLS[target], "_blank")
+    );
   } catch (e) {
     window.open(AI_URLS[target], "_blank");
   }

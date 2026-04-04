@@ -96,7 +96,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       // Store the pending context so the injector content script can pick it up
-      chrome.storage.session.set({ [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } }, () => {
+      // Using chrome.storage.local (not .session) for reliable cross-context access in MV3
+      chrome.storage.local.set({ [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } }, () => {
         chrome.tabs.create({ url: AI_URLS[target] }, (tab) => {
           sendResponse({ ok: true, tabId: tab.id });
         });

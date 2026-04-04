@@ -167,16 +167,28 @@ async function scheduleConversationSave() {
 function formatContextBlock(conversation) {
   if (!conversation?.messages?.length) return null;
   const lines = [
-    `[Context from Claude: "${conversation.title || "Untitled"}"]`,
-    `[Saved: ${new Date(conversation.savedAt).toLocaleString()}]`,
-    "",
+    `[CONTEXT HANDOFF — Do NOT reply to this message]`,
+    ``,
+    `The following is the full context of a conversation I was having on Claude.`,
+    `Please read and remember this context. Do not respond to it.`,
+    `I will send my next message separately to continue the conversation.`,
+    ``,
+    `--- Conversation: "${conversation.title || "Untitled"}" ---`,
+    `Saved: ${new Date(conversation.savedAt).toLocaleString()}`,
+    ``,
   ];
   for (const msg of conversation.messages) {
     lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
   }
-  lines.push("---", "I'm continuing this conversation from Claude. What are your thoughts?");
+  lines.push(
+    `--- End of context ---`,
+    ``,
+    `(Please acknowledge you have read the above context by saying "Got it — context received." ` +
+    `Then wait for my next message.)`
+  );
   return lines.join("\n");
 }
+
 
 // ── Send to AI ────────────────────────────────────────────────────────────────
 async function sendToAI(target) {

@@ -1,89 +1,261 @@
-// injectors/gemini.js
-// Runs on gemini.google.com
-// BLOCK A — Existing pending context receiver (DO NOT CHANGE)
+// injectors/gemini.js — Runs on gemini.google.com
+// Claude Context Preserver — Phase 2
+//
+// Storage: chrome.storage.LOCAL (NOT .session — session is unreliable in content scripts)
 
 const PENDING_INJECT_KEY = "pending_context_inject";
 
-async function getPendingContext() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.session.get([PENDING_INJECT_KEY], (result) => {
-        const pending = result[PENDING_INJECT_KEY];
-        if (!pending) { resolve(null); return; }
-        if (pending.target !== "gemini" || Date.now() - pending.ts > 60000) {
-          resolve(null); return;
-        }
-        chrome.storage.session.remove([PENDING_INJECT_KEY], () => resolve(pending.context));
-      });
-    } catch (e) { resolve(null); }
-  });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK A — Wait for Gemini's actual input field
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function waitForGeminiInput(maxRetries = 60) {
+  for (let i = 0; i < maxRetries; i++) {
+    const el = findGeminiInput();
+    if (el) {
+      console.log("[CC] 🎯 Gemini input found:", el.tagName, el.className);
+      return el;
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return null;
 }
 
-function injectIntoGemini(context) {
-  const selectors = [
-    "rich-textarea div[contenteditable='true']",
-    ".ql-editor[contenteditable='true']",
-    "div[contenteditable='true'][data-placeholder]",
-    "div[contenteditable='true']",
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (el) {
-      el.focus();
-      document.execCommand("selectAll", false, null);
-      document.execCommand("delete", false, null);
-      document.execCommand("insertText", false, context);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: context }));
-      showBanner("Context injected — review and send!");
+function findGeminiInput() {
+  // PRIMARY (confirmed from live DOM):
+  // <rich-textarea class="ql-container ql-bubble">
+  //   <div class="ql-editor ql-blank textarea new-input-ui" contenteditable="true" role="textbox" aria-label="Enter a prompt for Gemini">
+  // IMPORTANT: .ql-clipboard is ALSO contenteditable inside rich-textarea — must exclude it
+  const ql = document.querySelector(
+    "rich-textarea .ql-editor[contenteditable='true']:not(.ql-clipboard)"
+  );
+  if (ql && ql.offsetParent !== null) return ql;
+
+  // FALLBACK 1: aria-label confirmed from live DOM
+  const byLabel = document.querySelector(
+    '[contenteditable="true"][aria-label="Enter a prompt for Gemini"],' +
+    '[contenteditable="true"][aria-label*="prompt for Gemini" i]'
+  );
+  if (byLabel && byLabel.offsetParent !== null) return byLabel;
+
+  // FALLBACK 2: role=textbox + aria-multiline (Gemini-specific attributes)
+  const byRole = document.querySelector(
+    '[contenteditable="true"][role="textbox"][aria-multiline="true"]'
+  );
+  if (byRole && byRole.offsetParent !== null) return byRole;
+
+  // FALLBACK 3: any .ql-editor contenteditable visible on screen
+  const allQl = document.querySelectorAll('.ql-editor[contenteditable="true"]');
+  for (const el of allQl) {
+    if (el.offsetParent !== null) return el;
+  }
+
+  // FALLBACK 4: large visible contenteditable in lower viewport half (last resort)
+  const allCe = document.querySelectorAll('[contenteditable="true"]:not(.ql-clipboard)');
+  for (const el of allCe) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 200 && rect.bottom > window.innerHeight * 0.4 && el.offsetParent !== null) {
+      return el;
+    }
+  }
+
+  return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK B — Correct injection for Quill / contenteditable
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Most reliable injection for Quill contenteditable
+function injectIntoGemini(el, text) {
+  // 1. Focus
+  el.click();
+  el.focus();
+
+  // 2. Remove Quill's blank placeholder class
+  el.classList.remove("ql-blank");
+
+  // 3. Build Quill-format HTML (each line = <p>, empty lines = <p><br></p>)
+  const html = text.split("\n").map(line => {
+    if (!line.trim()) return "<p><br></p>";
+    const escaped = line
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    return `<p>${escaped}</p>`;
+  }).join("");
+
+  // 4. Set innerHTML directly
+  el.innerHTML = html;
+
+  // 5. Place cursor at end so Quill knows editing is happening
+  try {
+    const range = document.createRange();
+    const sel = window.getSelection();
+    const lastChild = el.lastElementChild || el;
+    range.selectNodeContents(lastChild);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch (_) {}
+
+  // 6. Fire the full event chain to update Angular/Quill state
+  el.dispatchEvent(new Event("focus", { bubbles: true }));
+  el.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, inputType: "insertText", data: text }));
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+
+  console.log("[CC] ✍️ Injected", text.length, "chars");
+}
+
+
+// ── Check if Quill field is still empty
+function isQuillEmpty(el) {
+  const t = (el.innerText || "").trim();
+  return !t || el.innerHTML === "<p><br></p>";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK C — Pending context handler (reads from chrome.storage.LOCAL)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function submitGeminiInput() {
+  for (let i = 0; i < 20; i++) {
+    const btn = document.querySelector(
+      'button[aria-label="Send message"]:not([aria-disabled="true"]):not([disabled])'
+    );
+    if (btn) {
+      console.log("[CC] 🚀 Clicking Send button");
+      btn.click();
       return true;
     }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const inp = findGeminiInput();
+  if (inp) {
+    console.warn("[CC] Send btn not enabled — trying Enter key");
+    inp.focus();
+    inp.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter", code: "Enter", keyCode: 13,
+      bubbles: true, cancelable: true, composed: true,
+    }));
+    return true;
   }
   return false;
 }
 
 async function tryInjectContext() {
-  const context = await getPendingContext();
-  if (!context) return;
-  let attempts = 0;
-  const poll = setInterval(() => {
-    attempts++;
-    const success = injectIntoGemini(context);
-    if (success || attempts >= 30) clearInterval(poll);
-  }, 500);
+  let pending;
+  try {
+    const result = await chrome.storage.local.get([PENDING_INJECT_KEY]);
+    pending = result[PENDING_INJECT_KEY];
+  } catch (e) {
+    console.warn("[CC] storage error:", e.message);
+    return;
+  }
+
+  console.log("[CC] storage →", pending
+    ? `target=${pending.target}, age=${Math.round((Date.now()-pending.ts)/1000)}s, len=${pending.context?.length}`
+    : "no pending data"
+  );
+
+  if (!pending) return;
+  if (pending.target !== "gemini") { return; }
+  if (Date.now() - pending.ts > 60000) {
+    return;
+  }
+
+  const input = await waitForGeminiInput();
+  if (!input) {
+    showBanner("Could not find Gemini input field.", true);
+    return;
+  }
+  console.log("[CC] ✅ Input found");
+
+  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) {}
+
+  injectIntoGemini(input, pending.context);
+  await new Promise(r => setTimeout(r, 600));
+
+  showBanner("Sending context to Gemini…");
+  const submitted = await submitGeminiInput();
+  if (!submitted) {
+    showBanner("Injected — please press Send manually.", true);
+  }
 }
 
-// BLOCK B — Gemini conversation scraper
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK D — Gemini conversation scraper
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function scrapeCurrentConversation() {
   const messages = [];
   const now = new Date().toISOString();
 
-  const allEls = document.querySelectorAll(
-    "user-query, model-response, chat-message, .conversation-container > *"
-  );
+  // ── PRIMARY (confirmed from live DOM) ────────────────────────────────────────
+  // User turns:  <user-query-content> → .query-text → .query-text-line (p tags)
+  // Model turns: <model-response> → message-content → .markdown.markdown-main-panel
 
-  if (allEls.length === 0) {
-    document.querySelectorAll("[data-message-author], [role='listitem']").forEach(el => {
-      const text = el.innerText?.trim();
-      if (text) messages.push({ type: "unknown", content: text, timestamp: now });
-    });
+  const userEls  = document.querySelectorAll("user-query-content");
+  const modelEls = document.querySelectorAll("model-response");
+
+  if (userEls.length > 0 || modelEls.length > 0) {
+    const all = [
+      ...[...userEls].map(el => ({ el, type: "user" })),
+      ...[...modelEls].map(el => ({ el, type: "assistant" })),
+    ].sort((a, b) =>
+      a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1
+    );
+
+    for (const { el, type } of all) {
+      let text;
+      if (type === "user") {
+        // Confirmed: .query-text > .query-text-line (one <p> per line)
+        const queryTextEl = el.querySelector(".query-text");
+        text = queryTextEl
+          ? [...queryTextEl.querySelectorAll(".query-text-line")]
+              .map(p => p.innerText?.trim())
+              .filter(Boolean)
+              .join("\n") || queryTextEl.innerText?.trim()
+          : el.querySelector(".user-query-bubble-with-background")?.innerText?.trim()
+            || el.innerText?.trim();
+      } else {
+        // Confirmed: message-content .markdown.markdown-main-panel
+        const markdownEl =
+          el.querySelector("message-content .markdown") ||
+          el.querySelector(".markdown") ||
+          el.querySelector("message-content");
+        // Strip buttons/icons from the clone before reading text
+        if (markdownEl) {
+          const clone = markdownEl.cloneNode(true);
+          clone.querySelectorAll("button, svg, [aria-hidden], response-element, sources-list").forEach(n => n.remove());
+          text = clone.innerText?.trim();
+        } else {
+          const clone = el.cloneNode(true);
+          clone.querySelectorAll("button, svg, [aria-hidden], response-element, sources-list, message-actions").forEach(n => n.remove());
+          text = clone.innerText?.trim();
+        }
+      }
+      if (text) messages.push({ type, content: text, format: "text", timestamp: now });
+    }
     return messages;
   }
 
-  allEls.forEach(el => {
-    const tag = el.tagName?.toLowerCase();
-    const isUser = tag === "user-query" || el.classList.contains("user-query");
-    const type = isUser ? "user" : "assistant";
-    const content = el.innerText?.trim();
-    if (content && content.length > 0) {
-      messages.push({ type, content, format: "text", timestamp: now });
-    }
+  // ── FALLBACK: broad sweep ────────────────────────────────────────────────────
+  document.querySelectorAll("[data-message-author], [role='listitem']").forEach(el => {
+    const text = el.innerText?.trim();
+    if (text) messages.push({ type: "unknown", content: text, timestamp: now });
   });
 
   return messages;
 }
 
-// BLOCK C — Shared UI helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK E — Shared UI utilities
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function showBanner(msg, isError = false) {
   document.getElementById("cc-banner")?.remove();
   const b = document.createElement("div");
@@ -114,17 +286,14 @@ function downloadCurrentChat() {
   const data = {
     id: `scraped_${Date.now()}`,
     title, url: window.location.href, messages,
-    savedAt: new Date().toISOString(),
-    source: "gemini", version: 1,
+    savedAt: new Date().toISOString(), source: "gemini", version: 1,
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = `${title.replace(/[^\w\d]+/g, "_").slice(0, 50)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
 
@@ -134,44 +303,34 @@ function sendFromThisPage(target) {
   const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "Untitled";
   const lines = [
     `[Context from Gemini conversation: "${title}"]`,
-    `[Scraped: ${new Date().toLocaleString()}]`,
-    "",
+    `[Scraped: ${new Date().toLocaleString()}]`, "",
   ];
   for (const msg of messages) {
     lines.push(`${msg.type === "user" ? "User" : "Gemini"}: ${msg.content}`, "");
   }
   lines.push("---", "I'm continuing this conversation. What are your thoughts?");
 
+  const AI_URLS = { claude: "https://claude.ai/new", chatgpt: "https://chatgpt.com/", deepseek: "https://chat.deepseek.com/" };
   const context = lines.join("\n");
-  const AI_URLS = {
-    claude:   "https://claude.ai/new",
-    chatgpt:  "https://chatgpt.com/",
-    deepseek: "https://chat.deepseek.com/",
-  };
-
   try {
-    chrome.storage.session.set({
-      pending_context_inject: { target, context, ts: Date.now() }
-    }, () => { window.open(AI_URLS[target], "_blank"); });
-  } catch (e) {
-    window.open(AI_URLS[target], "_blank");
-  }
+    chrome.storage.session.set(
+      { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
+      () => window.open(AI_URLS[target], "_blank")
+    );
+  } catch (e) { window.open(AI_URLS[target], "_blank"); }
 }
 
-// AI options for Gemini panel (excludes Gemini itself)
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK F — "Ask AI" button + panel UI
+// ═══════════════════════════════════════════════════════════════════════════════
+
 const CC_AI_OPTIONS = [
-  {
-    id: "claude",   label: "Claude",   color: "#d97706", bg: "rgba(217,119,6,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>`
-  },
-  {
-    id: "chatgpt",  label: "ChatGPT",  color: "#10a37f", bg: "rgba(16,163,127,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
-  },
-  {
-    id: "deepseek", label: "DeepSeek", color: "#1A6BFF", bg: "rgba(26,107,255,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#1A6BFF"/><circle cx="12" cy="12" r="5" fill="white"/><circle cx="12" cy="12" r="2.5" fill="#1A6BFF"/></svg>`
-  },
+  { id: "claude",   label: "Claude",   color: "#d97706", bg: "rgba(217,119,6,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>` },
+  { id: "chatgpt",  label: "ChatGPT",  color: "#10a37f", bg: "rgba(16,163,127,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>` },
+  { id: "deepseek", label: "DeepSeek", color: "#1A6BFF", bg: "rgba(26,107,255,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#1A6BFF"/><circle cx="12" cy="12" r="5" fill="white"/><circle cx="12" cy="12" r="2.5" fill="#1A6BFF"/></svg>` },
 ];
 
 function ensureStyles() {
@@ -180,25 +339,15 @@ function ensureStyles() {
   s.id = "cc-styles";
   s.textContent = `
     #cc-ask-ai-btn {
-      display: inline-flex !important;
-      align-items: center !important;
-      gap: 5px !important;
-      padding: 0 10px !important;
-      height: 32px !important;
-      background: transparent !important;
-      border: 1px solid rgba(255,255,255,0.15) !important;
-      border-radius: 8px !important;
-      color: rgba(255,255,255,0.65) !important;
-      cursor: pointer !important;
-      font-family: system-ui, sans-serif !important;
-      font-size: 12px !important;
-      font-weight: 600 !important;
+      display: inline-flex !important; align-items: center !important; gap: 5px !important;
+      padding: 0 10px !important; height: 32px !important;
+      background: transparent !important; border: 1px solid rgba(255,255,255,0.15) !important;
+      border-radius: 8px !important; color: rgba(255,255,255,0.65) !important;
+      cursor: pointer !important; font-family: system-ui, sans-serif !important;
+      font-size: 12px !important; font-weight: 600 !important;
       transition: background 0.15s, border-color 0.15s, color 0.15s !important;
-      flex-shrink: 0 !important;
-      white-space: nowrap !important;
-      outline: none !important;
-      box-shadow: none !important;
-      vertical-align: middle !important;
+      flex-shrink: 0 !important; white-space: nowrap !important;
+      outline: none !important; box-shadow: none !important; vertical-align: middle !important;
     }
     #cc-ask-ai-btn:hover {
       background: rgba(255,255,255,0.07) !important;
@@ -208,21 +357,14 @@ function ensureStyles() {
     #cc-ask-ai-btn.cc-active {
       background: rgba(255,255,255,0.1) !important;
       border-color: rgba(255,255,255,0.35) !important;
-      color: rgba(255,255,255,0.95) !important;
     }
     #cc-ask-ai-panel {
-      position: fixed !important;
-      background: #18181b !important;
-      border: 1px solid rgba(255,255,255,0.1) !important;
-      border-radius: 14px !important;
-      padding: 8px !important;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(0,0,0,0.1) !important;
-      z-index: 2147483647 !important;
-      display: none !important;
-      flex-direction: column !important;
-      gap: 3px !important;
-      min-width: 210px !important;
-      font-family: system-ui, sans-serif !important;
+      position: fixed !important; background: #18181b !important;
+      border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 14px !important;
+      padding: 8px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+      z-index: 2147483647 !important; display: none !important;
+      flex-direction: column !important; gap: 3px !important;
+      min-width: 210px !important; font-family: system-ui, sans-serif !important;
     }
     #cc-ask-ai-panel.cc-open {
       display: flex !important;
@@ -233,36 +375,25 @@ function ensureStyles() {
       to   { opacity:1; transform:translateY(0) scale(1); }
     }
     .cc-panel-hdr {
-      font-size: 10px !important;
-      font-weight: 700 !important;
-      color: rgba(255,255,255,0.35) !important;
-      text-transform: uppercase !important;
-      letter-spacing: 0.8px !important;
-      padding: 3px 8px 8px !important;
-      border-bottom: 1px solid rgba(255,255,255,0.07) !important;
-      margin-bottom: 2px !important;
+      font-size: 10px !important; font-weight: 700 !important;
+      color: rgba(255,255,255,0.35) !important; text-transform: uppercase !important;
+      letter-spacing: 0.8px !important; padding: 3px 8px 8px !important;
+      border-bottom: 1px solid rgba(255,255,255,0.07) !important; margin-bottom: 2px !important;
     }
     .cc-ai-opt {
-      display: flex !important;
-      align-items: center !important;
-      gap: 10px !important;
-      width: 100% !important;
-      padding: 8px 10px !important;
-      background: transparent !important;
-      border: none !important;
-      border-radius: 8px !important;
-      cursor: pointer !important;
+      display: flex !important; align-items: center !important; gap: 10px !important;
+      width: 100% !important; padding: 8px 10px !important;
+      background: transparent !important; border: none !important;
+      border-radius: 8px !important; cursor: pointer !important;
       font-family: system-ui, sans-serif !important;
-      transition: background 0.12s, transform 0.1s !important;
-      text-align: left !important;
+      transition: background 0.12s, transform 0.1s !important; text-align: left !important;
     }
     .cc-ai-opt:hover { background: rgba(255,255,255,0.06) !important; transform: translateX(2px) !important; }
     .cc-ai-opt:active { transform: scale(0.97) !important; }
     .cc-ai-ico {
-      width: 28px !important; height: 28px !important;
-      border-radius: 8px !important;
-      display: flex !important; align-items: center !important; justify-content: center !important;
-      flex-shrink: 0 !important;
+      width: 28px !important; height: 28px !important; border-radius: 8px !important;
+      display: flex !important; align-items: center !important;
+      justify-content: center !important; flex-shrink: 0 !important;
     }
     .cc-ai-lbl { font-size: 13px !important; font-weight: 600 !important; color: rgba(255,255,255,0.9) !important; display:block !important; }
     .cc-ai-sub { font-size: 10px !important; color: rgba(255,255,255,0.4) !important; display:block !important; margin-top:1px !important; }
@@ -299,15 +430,10 @@ function buildPanel() {
         <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
       </svg>
     `;
-    opt.addEventListener("mousedown", (e) => {
-      e.preventDefault();
-      closePanel();
-      sendFromThisPage(ai.id);
-    });
+    opt.addEventListener("mousedown", (e) => { e.preventDefault(); closePanel(); sendFromThisPage(ai.id); });
     panel.appendChild(opt);
   }
 
-  // Divider + Download option
   const divider = document.createElement("div");
   divider.className = "cc-divider";
   panel.appendChild(divider);
@@ -317,8 +443,10 @@ function buildPanel() {
   dlBtn.type = "button";
   dlBtn.innerHTML = `
     <span class="cc-ai-ico" style="background:rgba(255,255,255,0.06)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)"
+        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
       </svg>
     </span>
     <span>
@@ -326,11 +454,7 @@ function buildPanel() {
       <span class="cc-ai-sub">Save as JSON</span>
     </span>
   `;
-  dlBtn.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    closePanel();
-    downloadCurrentChat();
-  });
+  dlBtn.addEventListener("mousedown", (e) => { e.preventDefault(); closePanel(); downloadCurrentChat(); });
   panel.appendChild(dlBtn);
 
   document.body.appendChild(panel);
@@ -382,11 +506,12 @@ function createAskAIButton() {
   return btn;
 }
 
-// BLOCK C — Gemini toolbar injection
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK G — Button injection into Gemini toolbar
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function findGeminiSlot() {
-  const wrapper = document.querySelector(".leading-actions-wrapper");
-  if (!wrapper) return null;
-  return wrapper;
+  return document.querySelector(".leading-actions-wrapper") || null;
 }
 
 function injectGeminiButton() {
@@ -394,43 +519,44 @@ function injectGeminiButton() {
   ensureStyles();
   const slot = findGeminiSlot();
   if (!slot) return;
-
   const btn = createAskAIButton();
   const toolbox = slot.querySelector("toolbox-drawer");
-  if (toolbox) {
-    slot.insertBefore(btn, toolbox);
-  } else {
-    slot.appendChild(btn);
-  }
+  toolbox ? slot.insertBefore(btn, toolbox) : slot.appendChild(btn);
 }
 
-// BLOCK D — Keep button alive via MutationObserver
-let _geminiObserver = null;
-function watchForButtonRemoval() {
-  if (_geminiObserver) return;
-  _geminiObserver = new MutationObserver(() => {
-    if (!document.getElementById("cc-ask-ai-btn")) {
-      setTimeout(injectGeminiButton, 300);
-    }
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK H — MutationObserver to survive Angular re-renders
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function observeGeminiDOM() {
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById("cc-ask-ai-btn")) injectGeminiButton();
   });
-  _geminiObserver.observe(document.body, { childList: true, subtree: true });
+  observer.observe(document.body, { childList: true, subtree: true });
 }
 
 let _injectAttempts = 0;
 function retryInjectButton() {
-  if (document.getElementById("cc-ask-ai-btn")) { watchForButtonRemoval(); return; }
+  if (document.getElementById("cc-ask-ai-btn")) { observeGeminiDOM(); return; }
   if (_injectAttempts++ > 30) return;
   injectGeminiButton();
   if (!document.getElementById("cc-ask-ai-btn")) {
     setTimeout(retryInjectButton, 500);
   } else {
-    watchForButtonRemoval();
+    observeGeminiDOM();
   }
 }
 
-// BLOCK E — Entry point
+// ═══════════════════════════════════════════════════════════════════════════════
+// BLOCK I — Entry point
+// ═══════════════════════════════════════════════════════════════════════════════
+
 function init() {
+  // Triple-fire to cover Angular's delayed hydration (0ms, 1.5s, 3s)
   tryInjectContext();
+  setTimeout(tryInjectContext, 1500);
+  setTimeout(tryInjectContext, 3000);
+
   retryInjectButton();
 }
 

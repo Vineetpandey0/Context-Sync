@@ -1,70 +1,95 @@
 // injectors/deepseek.js
 // Runs on chat.deepseek.com
-// BLOCK A — Existing pending context receiver (DO NOT CHANGE)
+// Storage: chrome.storage.LOCAL (session is unreliable in content scripts)
 
 const PENDING_INJECT_KEY = "pending_context_inject";
 
-async function getPendingContext() {
-  return new Promise((resolve) => {
-    try {
-      chrome.storage.session.get([PENDING_INJECT_KEY], (result) => {
-        const pending = result[PENDING_INJECT_KEY];
-        if (!pending) { resolve(null); return; }
-        if (pending.target !== "deepseek" || Date.now() - pending.ts > 60000) {
-          resolve(null); return;
-        }
-        chrome.storage.session.remove([PENDING_INJECT_KEY], () => resolve(pending.context));
-      });
-    } catch (e) { resolve(null); }
-  });
+// ── Wait for DeepSeek's textarea to mount
+async function waitForDeepSeekInput(maxRetries = 60) {
+  for (let i = 0; i < maxRetries; i++) {
+    const el = findDeepSeekInput();
+    if (el) return el;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return null;
 }
 
-function injectIntoDeepSeek(context) {
-  const selectors = [
-    "textarea#chat-input",
-    "textarea[placeholder]",
-    "div[contenteditable='true'][data-lexical-editor='true']",
-    "div[contenteditable='true']",
-    "textarea",
-  ];
-  for (const sel of selectors) {
-    const el = document.querySelector(sel);
-    if (!el) continue;
-    el.focus();
-    if (el.tagName === "TEXTAREA") {
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      if (nativeSetter) {
-        nativeSetter.call(el, context);
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      } else {
-        el.value = context;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-    } else {
-      el.innerHTML = "";
-      document.execCommand("selectAll", false, null);
-      document.execCommand("delete", false, null);
-      document.execCommand("insertText", false, context);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: context }));
-    }
-    showBanner("Context injected — review and send!");
+function findDeepSeekInput() {
+  // Primary: confirmed textarea selector
+  const ta = document.querySelector("textarea#chat-input");
+  if (ta && ta.offsetParent !== null) return ta;
+  // Fallback 1: any visible textarea
+  for (const el of document.querySelectorAll("textarea")) {
+    if (el.offsetParent !== null) return el;
+  }
+  // Fallback 2: contenteditable (future DS changes)
+  const ce = document.querySelector('[contenteditable="true"][data-lexical-editor="true"]');
+  if (ce && ce.offsetParent !== null) return ce;
+  return null;
+}
+
+function injectIntoDeepSeek(el, context) {
+  el.focus();
+  if (el.tagName === "TEXTAREA") {
+    // React requires native setter to bypass synthetic event wrapping
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
+    nativeSetter ? nativeSetter.call(el, context) : (el.value = context);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    document.execCommand("selectAll", false, null);
+    document.execCommand("delete", false, null);
+    document.execCommand("insertText", false, context);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+}
+
+async function submitDeepSeekInput() {
+  for (let i = 0; i < 20; i++) {
+    const btn = document.querySelector(
+      'button[aria-label*="Send" i]:not([disabled]),' +
+      'button[type="submit"]:not([disabled])'
+    );
+    if (btn) { btn.click(); return true; }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  const inp = findDeepSeekInput();
+  if (inp) {
+    inp.focus();
+    inp.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Enter", code: "Enter", keyCode: 13,
+      bubbles: true, cancelable: true, composed: true,
+    }));
     return true;
   }
   return false;
 }
 
 async function tryInjectContext() {
-  const context = await getPendingContext();
-  if (!context) return;
-  let attempts = 0;
-  const poll = setInterval(() => {
-    attempts++;
-    const success = injectIntoDeepSeek(context);
-    if (success || attempts >= 30) clearInterval(poll);
-  }, 500);
+  let pending;
+  try {
+    const result = await chrome.storage.local.get([PENDING_INJECT_KEY]);
+    pending = result[PENDING_INJECT_KEY];
+  } catch (e) { return; }
+
+  if (!pending) return;
+  if (pending.target !== "deepseek") return;
+  if (Date.now() - pending.ts > 60000) {
+    await chrome.storage.local.remove([PENDING_INJECT_KEY]); return;
+  }
+
+  const input = await waitForDeepSeekInput();
+  if (!input) { showBanner("Could not find DeepSeek input field.", true); return; }
+
+  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) {}
+
+  injectIntoDeepSeek(input, pending.context);
+  await new Promise(r => setTimeout(r, 500));
+  showBanner("Sending context to DeepSeek…");
+  const ok = await submitDeepSeekInput();
+  if (!ok) showBanner("Injected — please press Send manually.", true);
 }
+
 
 // BLOCK B — DeepSeek conversation scraper
 function scrapeCurrentConversation() {
@@ -162,9 +187,10 @@ function sendFromThisPage(target) {
   };
 
   try {
-    chrome.storage.session.set({
-      pending_context_inject: { target, context, ts: Date.now() }
-    }, () => { window.open(AI_URLS[target], "_blank"); });
+    chrome.storage.local.set(
+      { [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } },
+      () => window.open(AI_URLS[target], "_blank")
+    );
   } catch (e) {
     window.open(AI_URLS[target], "_blank");
   }
