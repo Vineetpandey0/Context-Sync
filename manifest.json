@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Claude Context Preserver",
-  "version": "1.1.0",
-  "description": "Automatically save and restore Claude.ai conversation context across sessions.",
+  "version": "1.2.0",
+  "description": "Automatically save and restore Claude.ai conversation context. Send context to Gemini, ChatGPT, or DeepSeek.",
 
   "permissions": [
     "storage",
@@ -14,18 +14,34 @@
   "host_permissions": [
     "https://claude.ai/*",
     "https://generativelanguage.googleapis.com/*",
-    "http://www.w3.org/2000/svg"
+    "https://gemini.google.com/*",
+    "https://chatgpt.com/*",
+    "https://chat.deepseek.com/*"
   ],
 
   "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "service_worker": "background.js"
   },
 
   "content_scripts": [
     {
       "matches": ["*://*.claude.ai/*"],
       "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["injectors/gemini.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chatgpt.com/*"],
+      "js": ["injectors/chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://chat.deepseek.com/*"],
+      "js": ["injectors/deepseek.js"],
       "run_at": "document_idle"
     }
   ],
@@ -44,12 +60,5 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  },
-
-  "web_accessible_resources": [
-    {
-      "resources": ["lib/compressor.js", "lib/storage.js", "lib/capsule.js"],
-      "matches": ["https://claude.ai/*"]
-    }
-  ]
+  }
 }

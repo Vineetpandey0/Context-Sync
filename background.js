@@ -1,16 +1,15 @@
-// background.js — DEBUG VERSION
+// background.js
 
 const STORAGE_KEY = "claude_conversations";
+const PENDING_INJECT_KEY = "pending_context_inject";
 
-const GEMINI_API_KEY = ""; // keep as is for now
+const GEMINI_API_KEY = ""; // keep as is
 const GEMINI_API_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-// ── Gemini call with logs ───────────────────────────────────────
+// ── Gemini API call ─────────────────────────────────────────────
 async function callGemini(systemPrompt, userPrompt) {
-
   if (!GEMINI_API_KEY) {
-    console.warn("[BG] ❌ No API key set");
     throw new Error("No Gemini API key");
   }
 
@@ -24,95 +23,61 @@ async function callGemini(systemPrompt, userPrompt) {
     }),
   });
 
-  // console.log("[BG] 📥 Response status:", res.status);
-
   if (!res.ok) {
     const errText = await res.text();
-    console.error("[BG] ❌ Gemini API error:", errText);
     throw new Error(errText);
   }
 
   const data = await res.json();
-
-  // console.log("[BG] 📦 Gemini raw response:", data);
-
-  const text =
-    data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
-
-  // console.log("[BG] ✅ Extracted text:", text);
-
-  return text;
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || null;
 }
+
+// ── AI target URLs ──────────────────────────────────────────────
+const AI_URLS = {
+  gemini: "https://gemini.google.com/app",
+  chatgpt: "https://chatgpt.com/",
+  deepseek: "https://chat.deepseek.com/",
+};
 
 // ── Message listener ────────────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // // console.log("[BG] 📩 Message received:", message);
-
   switch (message.action) {
+
+    // ── Compress a single message via Gemini ──────────────────────
     case "compressMessage": {
       const { type, content } = message;
-
-        // console.log("[BG] ⚙️ compressMessage triggered");
-        // console.log("[BG] type:", type);
-        // console.log("[BG] content length:", content?.length);
 
       const systemPrompt =
         type === "assistant"
           ? "Compress assistant message (technical, lossless)."
           : "Compress user message (preserve intent).";
 
-      const userPrompt = content;
-
-      callGemini(systemPrompt, userPrompt)
+      callGemini(systemPrompt, content)
         .then((compressed) => {
-          // console.log("[BG] ✅ Compression success:", compressed);
-
-          sendResponse({
-            ok: true,
-            compressed: compressed || content, // fallback
-          });
+          sendResponse({ ok: true, compressed: compressed || content });
         })
         .catch((err) => {
-          // console.error("[BG] ❌ Compression failed:", err.message);
-
-          sendResponse({
-            ok: false,
-            compressed: null,
-            error: err.message,
-          });
+          sendResponse({ ok: false, compressed: null, error: err.message });
         });
 
-      return true; // IMPORTANT
+      return true;
     }
 
+    // ── Scrape active Claude tab ──────────────────────────────────
     case "scrapeActiveTab": {
-      // console.log("[BG] 🔍 scrapeActiveTab triggered");
-
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         const tab = tabs[0];
 
-        // console.log("[BG] Active tab:", tab);
-
         if (!tab || !tab.url || !tab.url.includes("claude.ai")) {
-          // console.warn("[BG] ❌ No valid Claude tab");
-
           sendResponse({ ok: false, error: "No Claude tab" });
           return;
         }
 
         chrome.tabs.sendMessage(tab.id, { action: "scrapeNow" }, (response) => {
           if (chrome.runtime.lastError) {
-            // console.error("[BG] ❌ sendMessage error:", chrome.runtime.lastError.message);
-
-            sendResponse({
-              ok: false,
-              error: chrome.runtime.lastError.message,
-            });
+            sendResponse({ ok: false, error: chrome.runtime.lastError.message });
             return;
           }
-
-          console.log("[BG] ✅ scrapeNow response:", response);
-
           sendResponse({ ok: true, response });
         });
       });
@@ -120,8 +85,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    // ── Open target AI with context injected ─────────────────────
+    case "openAIWithContext": {
+      const { target, context } = message;
+
+      if (!AI_URLS[target]) {
+        sendResponse({ ok: false, error: "Unknown AI target" });
+        return true;
+      }
+
+      // Store the pending context so the injector content script can pick it up
+      chrome.storage.session.set({ [PENDING_INJECT_KEY]: { target, context, ts: Date.now() } }, () => {
+        chrome.tabs.create({ url: AI_URLS[target] }, (tab) => {
+          sendResponse({ ok: true, tabId: tab.id });
+        });
+      });
+
+      return true;
+    }
+
     default:
-      // console.warn("[BG] ⚠️ Unknown action:", message.action);
       break;
   }
 });
