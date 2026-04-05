@@ -207,8 +207,8 @@ Since this extension is not yet on the Chrome Web Store, install it in **Develop
 ### Step 1 — Download the extension files
 
 ```bash
-git clone https://github.com/Vineetpandey0/Claude-Context-Preserver.git
-cd Claude-Context-Preserver
+git clone https://github.com/Vineetpandey0/context-sync.git
+cd context-sync
 ```
 
 ### Step 2 — Open Chrome Extensions
@@ -460,7 +460,7 @@ Raw Conversation
 ## 📁 File Structure
 
 ```
-Claude-Context-Preserver/
+Context-Sync/
 ├── manifest.json               ← MV3 config, host permissions for all 4 AIs
 ├── background.js               ← Service worker: Gemini API, routing, scrapeActiveTab
 ├── content.js                  ← Claude scraper + Export button + Copy/Download
