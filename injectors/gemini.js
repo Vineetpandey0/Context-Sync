@@ -1,5 +1,5 @@
 // injectors/gemini.js — Runs on gemini.google.com
-// Claude Context Preserver — Phase 2
+// Context Sync — Phase 2
 //
 // Storage: chrome.storage.LOCAL (NOT .session — session is unreliable in content scripts)
 
@@ -98,7 +98,7 @@ function injectIntoGemini(el, text) {
     range.collapse(false);
     sel.removeAllRanges();
     sel.addRange(range);
-  } catch (_) {}
+  } catch (_) { }
 
   // 6. Fire the full event chain to update Angular/Quill state
   el.dispatchEvent(new Event("focus", { bubbles: true }));
@@ -157,7 +157,7 @@ async function tryInjectContext() {
   }
 
   console.log("[CC] storage →", pending
-    ? `target=${pending.target}, age=${Math.round((Date.now()-pending.ts)/1000)}s, len=${pending.context?.length}`
+    ? `target=${pending.target}, age=${Math.round((Date.now() - pending.ts) / 1000)}s, len=${pending.context?.length}`
     : "no pending data"
   );
 
@@ -174,7 +174,7 @@ async function tryInjectContext() {
   }
   console.log("[CC] ✅ Input found");
 
-  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) {}
+  try { await chrome.storage.local.remove([PENDING_INJECT_KEY]); } catch (_) { }
 
   injectIntoGemini(input, pending.context);
   await new Promise(r => setTimeout(r, 600));
@@ -198,7 +198,7 @@ function scrapeCurrentConversation() {
   // User turns:  <user-query-content> → .query-text → .query-text-line (p tags)
   // Model turns: <model-response> → message-content → .markdown.markdown-main-panel
 
-  const userEls  = document.querySelectorAll("user-query-content");
+  const userEls = document.querySelectorAll("user-query-content");
   const modelEls = document.querySelectorAll("model-response");
 
   if (userEls.length > 0 || modelEls.length > 0) {
@@ -216,11 +216,11 @@ function scrapeCurrentConversation() {
         const queryTextEl = el.querySelector(".query-text");
         text = queryTextEl
           ? [...queryTextEl.querySelectorAll(".query-text-line")]
-              .map(p => p.innerText?.trim())
-              .filter(Boolean)
-              .join("\n") || queryTextEl.innerText?.trim()
+            .map(p => p.innerText?.trim())
+            .filter(Boolean)
+            .join("\n") || queryTextEl.innerText?.trim()
           : el.querySelector(".user-query-bubble-with-background")?.innerText?.trim()
-            || el.innerText?.trim();
+          || el.innerText?.trim();
       } else {
         // Confirmed: message-content .markdown.markdown-main-panel
         const markdownEl =
@@ -297,6 +297,24 @@ function downloadCurrentChat() {
   URL.revokeObjectURL(url);
 }
 
+function copyCurrentChat() {
+  const messages = scrapeCurrentConversation();
+  if (!messages.length) { showBanner("No conversation found to copy.", true); return; }
+  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
+  const lines = [
+    `[Gemini conversation: "${title}"]`,
+    `[Copied: ${new Date().toLocaleString()}]`,
+    "",
+  ];
+  for (const msg of messages) {
+    lines.push(`${msg.type === "user" ? "User" : "Gemini"}: ${msg.content}`, "");
+  }
+  navigator.clipboard.writeText(lines.join("\n")).then(
+    () => showBanner("Conversation copied to clipboard"),
+    () => showBanner("Copy failed — try again.", true)
+  );
+}
+
 function sendFromThisPage(target) {
   const messages = scrapeCurrentConversation();
   if (!messages.length) { showBanner("No conversation found on this page.", true); return; }
@@ -325,12 +343,18 @@ function sendFromThisPage(target) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const CC_AI_OPTIONS = [
-  { id: "claude",   label: "Claude",   color: "#d97706", bg: "rgba(217,119,6,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>` },
-  { id: "chatgpt",  label: "ChatGPT",  color: "#10a37f", bg: "rgba(16,163,127,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>` },
-  { id: "deepseek", label: "DeepSeek", color: "#1A6BFF", bg: "rgba(26,107,255,0.12)",
-    svg: `<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#1A6BFF"/><circle cx="12" cy="12" r="5" fill="white"/><circle cx="12" cy="12" r="2.5" fill="#1A6BFF"/></svg>` },
+  {
+    id: "claude", label: "Claude", color: "#d97706", bg: "rgba(217,119,6,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M14.5 2C11 2 8.5 4.5 8.5 7.5c0 1.5.5 2.8 1.4 3.8L4 17.5l1.5 1.5 5.9-6.2c1 .9 2.3 1.4 3.6 1.4C18 14.2 20.5 11.7 20.5 8.5S18 2 14.5 2zm0 2c2.2 0 4 1.8 4 4s-1.8 4-4 4-4-1.8-4-4 1.8-4 4-4z" fill="#d97706"/></svg>`
+  },
+  {
+    id: "chatgpt", label: "ChatGPT", color: "#10a37f", bg: "rgba(16,163,127,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24" fill="#10a37f"><circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>`
+  },
+  {
+    id: "deepseek", label: "DeepSeek", color: "#1A6BFF", bg: "rgba(26,107,255,0.12)",
+    svg: `<svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#1A6BFF"/><circle cx="12" cy="12" r="5" fill="white"/><circle cx="12" cy="12" r="2.5" fill="#1A6BFF"/></svg>`
+  },
 ];
 
 function ensureStyles() {
@@ -399,6 +423,35 @@ function ensureStyles() {
     .cc-ai-sub { font-size: 10px !important; color: rgba(255,255,255,0.4) !important; display:block !important; margin-top:1px !important; }
     .cc-arr { margin-left: auto !important; color: rgba(255,255,255,0.35) !important; flex-shrink: 0 !important; }
     .cc-divider { height: 1px !important; background: rgba(255,255,255,0.07) !important; margin: 3px 0 !important; }
+    .cc-action-row {
+      display: flex !important;
+      gap: 4px !important;
+      padding: 2px 2px 2px !important;
+    }
+    .cc-action-btn {
+      flex: 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      padding: 7px 10px !important;
+      background: transparent !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      border-radius: 8px !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      font-family: system-ui, sans-serif !important;
+      font-size: 11px !important;
+      font-weight: 500 !important;
+      transition: background 0.12s, color 0.12s, border-color 0.12s !important;
+      white-space: nowrap !important;
+    }
+    .cc-action-btn:hover {
+      background: rgba(255,255,255,0.07) !important;
+      border-color: rgba(255,255,255,0.18) !important;
+      color: rgba(255,255,255,0.9) !important;
+    }
+    .cc-action-btn:active { opacity: 0.75 !important; }
   `;
   document.head.appendChild(s);
 }
@@ -438,24 +491,49 @@ function buildPanel() {
   divider.className = "cc-divider";
   panel.appendChild(divider);
 
-  const dlBtn = document.createElement("button");
-  dlBtn.className = "cc-ai-opt";
-  dlBtn.type = "button";
-  dlBtn.innerHTML = `
-    <span class="cc-ai-ico" style="background:rgba(255,255,255,0.06)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)"
-        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-    </span>
-    <span>
-      <span class="cc-ai-lbl">Download chat</span>
-      <span class="cc-ai-sub">Save as JSON</span>
-    </span>
+  // ── Copy + Download inline row ──────────────────────────────────────────
+  const actionRow = document.createElement("div");
+  actionRow.className = "cc-action-row";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "cc-action-btn";
+  copyBtn.type = "button";
+  copyBtn.title = "Copy conversation to clipboard";
+  copyBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>
+    Copy
   `;
-  dlBtn.addEventListener("mousedown", (e) => { e.preventDefault(); closePanel(); downloadCurrentChat(); });
-  panel.appendChild(dlBtn);
+  copyBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    copyCurrentChat();
+  });
+
+  const dlBtn = document.createElement("button");
+  dlBtn.className = "cc-action-btn";
+  dlBtn.type = "button";
+  dlBtn.title = "Download conversation as JSON";
+  dlBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    </svg>
+    Download
+  `;
+  dlBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    downloadCurrentChat();
+  });
+
+  actionRow.appendChild(copyBtn);
+  actionRow.appendChild(dlBtn);
+  panel.appendChild(actionRow);
 
   document.body.appendChild(panel);
   return panel;
@@ -496,6 +574,7 @@ function createAskAIButton() {
     </svg>
     Export
   `;
+  btn.style.marginBottom = "5px";
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
     _panelOpen ? closePanel() : openPanel(btn);

@@ -155,6 +155,24 @@ function downloadCurrentChat() {
   URL.revokeObjectURL(url);
 }
 
+function copyCurrentChat() {
+  const messages = scrapeCurrentConversation();
+  if (!messages.length) { showBanner("No conversation found to copy.", true); return; }
+  const title = messages.find(m => m.type === "user")?.content?.slice(0, 60) || "conversation";
+  const lines = [
+    `[ChatGPT conversation: "${title}"]`,
+    `[Copied: ${new Date().toLocaleString()}]`,
+    "",
+  ];
+  for (const msg of messages) {
+    lines.push(`${msg.type === "user" ? "User" : "ChatGPT"}: ${msg.content}`, "");
+  }
+  navigator.clipboard.writeText(lines.join("\n")).then(
+    () => showBanner("Conversation copied to clipboard"),
+    () => showBanner("Copy failed — try again.", true)
+  );
+}
+
 function sendFromThisPage(target) {
   const messages = scrapeCurrentConversation();
   if (!messages.length) { showBanner("No conversation found on this page.", true); return; }
@@ -296,6 +314,35 @@ function ensureStyles() {
     .cc-ai-sub { font-size: 10px !important; color: rgba(255,255,255,0.4) !important; display:block !important; margin-top:1px !important; }
     .cc-arr { margin-left: auto !important; color: rgba(255,255,255,0.35) !important; flex-shrink: 0 !important; }
     .cc-divider { height: 1px !important; background: rgba(255,255,255,0.07) !important; margin: 3px 0 !important; }
+    .cc-action-row {
+      display: flex !important;
+      gap: 4px !important;
+      padding: 2px 2px 2px !important;
+    }
+    .cc-action-btn {
+      flex: 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      padding: 7px 10px !important;
+      background: transparent !important;
+      border: 1px solid rgba(255,255,255,0.08) !important;
+      border-radius: 8px !important;
+      color: rgba(255,255,255,0.55) !important;
+      cursor: pointer !important;
+      font-family: system-ui, sans-serif !important;
+      font-size: 11px !important;
+      font-weight: 500 !important;
+      transition: background 0.12s, color 0.12s, border-color 0.12s !important;
+      white-space: nowrap !important;
+    }
+    .cc-action-btn:hover {
+      background: rgba(255,255,255,0.07) !important;
+      border-color: rgba(255,255,255,0.18) !important;
+      color: rgba(255,255,255,0.9) !important;
+    }
+    .cc-action-btn:active { opacity: 0.75 !important; }
   `;
   document.head.appendChild(s);
 }
@@ -339,26 +386,49 @@ function buildPanel() {
   divider.className = "cc-divider";
   panel.appendChild(divider);
 
+  // ── Copy + Download inline row ──────────────────────────────────────────
+  const actionRow = document.createElement("div");
+  actionRow.className = "cc-action-row";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "cc-action-btn";
+  copyBtn.type = "button";
+  copyBtn.title = "Copy conversation to clipboard";
+  copyBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>
+    Copy
+  `;
+  copyBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    copyCurrentChat();
+  });
+
   const dlBtn = document.createElement("button");
-  dlBtn.className = "cc-ai-opt";
+  dlBtn.className = "cc-action-btn";
   dlBtn.type = "button";
+  dlBtn.title = "Download conversation as JSON";
   dlBtn.innerHTML = `
-    <span class="cc-ai-ico" style="background:rgba(255,255,255,0.06)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-      </svg>
-    </span>
-    <span>
-      <span class="cc-ai-lbl">Download chat</span>
-      <span class="cc-ai-sub">Save as JSON</span>
-    </span>
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    </svg>
+    Download
   `;
   dlBtn.addEventListener("mousedown", (e) => {
     e.preventDefault();
     closePanel();
     downloadCurrentChat();
   });
-  panel.appendChild(dlBtn);
+
+  actionRow.appendChild(copyBtn);
+  actionRow.appendChild(dlBtn);
+  panel.appendChild(actionRow);
 
   document.body.appendChild(panel);
   return panel;

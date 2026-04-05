@@ -191,6 +191,43 @@ function formatContextBlock(conversation) {
 }
 
 
+// ── Copy current chat to clipboard ──────────────────────────────────────────
+function copyCurrentChat() {
+  const messages = scrapeMessages();
+  if (!messages.length) { showToast("No messages found to copy."); return; }
+  const firstUser = messages.find(m => m.type === "user");
+  const title = firstUser?.content?.slice(0, 60) || "conversation";
+  const lines = [
+    `[Claude conversation: "${title}"]`,
+    `[Copied: ${new Date().toLocaleString()}]`,
+    "",
+  ];
+  for (const msg of messages) {
+    lines.push(`${msg.type === "user" ? "User" : "Claude"}: ${msg.content}`, "");
+  }
+  navigator.clipboard.writeText(lines.join("\n")).then(
+    () => showToast("✓ Conversation copied to clipboard"),
+    () => showToast("⚠️ Copy failed — try again.")
+  );
+}
+
+// ── Download current chat as JSON ──────────────────────────────────────────────
+function downloadCurrentChat() {
+  const messages = scrapeMessages();
+  if (!messages.length) { showToast("No messages found to download."); return; }
+  const capsule = Capsule.build(messages, window.location.href);
+  const blob = new Blob([JSON.stringify(capsule, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${capsule.title.replace(/[^\w\d]+/g, "_").slice(0, 50)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("✓ Downloading JSON…");
+}
+
 // ── Send to AI ────────────────────────────────────────────────────────────────
 async function sendToAI(target) {
   const all = await storageGetAll();
@@ -347,6 +384,36 @@ function ensureStyles() {
     .cc-ai-lbl { font-size: 13px !important; font-weight: 600 !important; color: hsl(var(--text-100)) !important; display:block !important; }
     .cc-ai-sub { font-size: 10px !important; color: hsl(var(--text-500)) !important; display:block !important; margin-top:1px !important; }
     .cc-arr { margin-left: auto !important; color: hsl(var(--text-500)) !important; flex-shrink: 0 !important; }
+    .cc-divider { height: 1px !important; background: hsl(var(--border-300) / 0.35) !important; margin: 3px 0 !important; }
+    .cc-action-row {
+      display: flex !important;
+      gap: 4px !important;
+      padding: 2px !important;
+    }
+    .cc-action-btn {
+      flex: 1 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      gap: 6px !important;
+      padding: 7px 10px !important;
+      background: transparent !important;
+      border: 1px solid hsl(var(--border-300) / 0.4) !important;
+      border-radius: 8px !important;
+      color: hsl(var(--text-400)) !important;
+      cursor: pointer !important;
+      font-family: inherit !important;
+      font-size: 11px !important;
+      font-weight: 500 !important;
+      transition: background 0.12s, color 0.12s, border-color 0.12s !important;
+      white-space: nowrap !important;
+    }
+    .cc-action-btn:hover {
+      background: hsl(var(--bg-100)) !important;
+      border-color: hsl(var(--border-200)) !important;
+      color: hsl(var(--text-200)) !important;
+    }
+    .cc-action-btn:active { opacity: 0.75 !important; }
   `;
   document.head.appendChild(s);
 }
@@ -409,6 +476,54 @@ function buildPanel() {
     });
     panel.appendChild(opt);
   }
+
+  // ── Copy + Download inline row ──────────────────────────────────────────
+  const divider = document.createElement("div");
+  divider.className = "cc-divider";
+  panel.appendChild(divider);
+
+  const actionRow = document.createElement("div");
+  actionRow.className = "cc-action-row";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.className = "cc-action-btn";
+  copyBtn.type = "button";
+  copyBtn.title = "Copy conversation to clipboard";
+  copyBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </svg>
+    Copy
+  `;
+  copyBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    copyCurrentChat();
+  });
+
+  const dlBtn = document.createElement("button");
+  dlBtn.className = "cc-action-btn";
+  dlBtn.type = "button";
+  dlBtn.title = "Download conversation as JSON";
+  dlBtn.innerHTML = `
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3v12"/><path d="m7 10 5 5 5-5"/>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    </svg>
+    Download
+  `;
+  dlBtn.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    closePanel();
+    downloadCurrentChat();
+  });
+
+  actionRow.appendChild(copyBtn);
+  actionRow.appendChild(dlBtn);
+  panel.appendChild(actionRow);
 
   document.body.appendChild(panel);
   return panel;

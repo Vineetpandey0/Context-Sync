@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Claude Context Preserver",
+  "name": "Context Sync",
   "version": "1.2.0",
   "description": "Automatically save and restore Claude.ai conversation context. Send context to Gemini, ChatGPT, or DeepSeek.",
 
@@ -48,7 +48,7 @@
 
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "Claude Context Preserver",
+    "default_title": "Context Sync",
     "default_icon": {
       "16": "icons/icon16.png",
       "24": "icons/icon48.png",
