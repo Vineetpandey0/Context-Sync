@@ -10,6 +10,8 @@
 
 > **Never lose a conversation again.** Save, copy, download, and port your AI context across sessions, accounts, and any platform — Claude, ChatGPT, Gemini, or DeepSeek.
 
+> _Previously known as **Claude Context Exporter** — now expanded to support all major AI platforms._
+
 ```
    ██████╗ ██████╗ ███╗   ██╗████████╗███████╗██╗  ██╗████████╗
   ██╔════╝██╔═══██╗████╗  ██║╚══██╔══╝██╔════╝╚██╗██╔╝╚══██╔══╝
